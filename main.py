@@ -75,7 +75,10 @@ class AuditRequest(BaseModel):
 def has_valid_gemini_key() -> bool:
     """Returns True if a real Gemini API key is configured."""
     key = os.getenv("GEMINI_API_KEY", "").strip()
-    return bool(key and key != "your_gemini_api_key_here")
+    if key and not key.startswith("your_gemini_api_key"):
+        return True
+    from llm_client import get_api_keys
+    return len(get_api_keys()) > 0
 
 
 def load_canonical_sample() -> Dict[str, Any]:

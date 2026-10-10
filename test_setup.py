@@ -39,14 +39,15 @@ def main():
     print(f"Target Gemini Model:   {model}")
     print(f"Fallback Gemini Model: {fallback_model}")
 
-    if not api_key or api_key == "your_gemini_api_key_here":
-        print("[!] GEMINI_API_KEY is currently empty or set to placeholder.")
+    from llm_client import get_api_keys
+    keys = get_api_keys()
+
+    if not keys:
+        print("[!] No valid Gemini API keys detected (GEMINI_API_KEY / GEMINI_API_KEYS empty or placeholder).")
         print("    -> Open '.env' in your editor and paste your free key from:")
         print("       https://aistudio.google.com/")
     else:
-        # Mask the key for display security
-        masked = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "***"
-        print(f"[OK] GEMINI_API_KEY detected: {masked}")
+        print(f"[OK] Gemini API key(s) detected: {len(keys)} configured.")
 
     print("=" * 60)
     print("Step 1 verification completed successfully!")

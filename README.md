@@ -152,6 +152,7 @@ pip install -r requirements.txt
 copy .env.example .env
 # Open .env in your editor and set:
 #   GEMINI_API_KEY=<your key from https://aistudio.google.com/>
+#   GEMINI_API_KEYS=<optional comma-separated list of keys for automatic 429 rotation>
 #   GEMINI_MODEL=gemini-3.8-flash        (or another model)
 #   GEMINI_FALLBACK_MODEL=gemini-3.7-flash (optional fallback model)
 #   LLM_CACHE=on
@@ -177,7 +178,7 @@ pip install -r requirements.txt
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env — set GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, LLM_CACHE
+# Edit .env — set GEMINI_API_KEY (or GEMINI_API_KEYS), GEMINI_MODEL, GEMINI_FALLBACK_MODEL, LLM_CACHE
 
 # 4. Verify setup
 python test_setup.py
@@ -362,23 +363,45 @@ For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits a
 
 ## Team & Roles
 
-<!-- Update this section with your actual team members and roles. -->
 
 | Name | Role |
 |---|---|
-| *Team Member 1* | Project Lead / Backend Development |
-| *Team Member 2* | Pipeline & LLM Integration |
-| *Team Member 3* | Frontend & UI/UX |
-| *Team Member 4* | Testing & Evaluation |
+| Ben Pereira | Project Lead / Backend Development |
+| Alisa Pereira | Pipeline & LLM Integration |
+| Prachi Thorat | Frontend & UI/UX |
+| Cordell Dsouza | Testing & Evaluation |
 
 ---
 
 ## Results
 
-<!-- TODO: Run `python -m eval.run_eval` to populate eval/RESULTS.md with actual numbers, then paste the contents here. The eval suite has not been run yet — no results to report. -->
+# Evaluation Results
 
-> **TODO** — The evaluation suite has not been run yet. Execute `python -m eval.run_eval` to generate `eval/RESULTS.md` with real numbers, then replace this section with the contents of that file.
+**Run:** 2026-10-10 19:59 UTC  
+**Cases completed:** 5 of 15 total test cases (33.3%)  
+*(Metrics computed strictly from completed cases; no numbers invented for unrun cases)*
 
+## Summary
+
+| Metric | Value |
+|---|---|
+| Completed cases | 5 / 15 (33.3%) |
+| Planted-error recall | 5/5 (100.0%) |
+| Verdict match rate | 5/5 (100.0%) |
+| False-flag rate (clean spans) | 0/13 (0.0%) |
+| Unverified quotes | 0 |
+| Avg claims per completed case | 5.0 |
+
+## Per-Case Breakdown (Completed Cases Only)
+
+| ID | Category | Claims | Planted | Caught | V-Match | Clean | F-Flag | Unv.Q | Score |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| wrong_fact_01 | wrong_fact | 3 | 1 | 1 | 1 | 2 | 0 | 0 | 52 |
+| wrong_fact_02 | wrong_fact | 3 | 1 | 1 | 1 | 2 | 0 | 0 | 52 |
+| wrong_fact_03 | wrong_fact | 8 | 1 | 1 | 1 | 3 | 0 | 0 | 72 |
+| wrong_fact_04 | wrong_fact | 5 | 1 | 1 | 1 | 3 | 0 | 0 | 65 |
+| wrong_fact_05 | wrong_fact | 6 | 1 | 1 | 1 | 3 | 0 | 0 | 68 |
+| **Totals (5/15)** | | **25** | **5** | **5** | **5** | **13** | **0** | **0** | |
 ---
 
 ## Limitations

@@ -1,0 +1,191 @@
+{
+  "run_timestamp": "2026-10-10T19:59:01.965842+00:00",
+  "total_cases_configured": 15,
+  "cases_evaluated": 5,
+  "totals": {
+    "total_planted": 5,
+    "caught": 5,
+    "recall_pct": 100.0,
+    "verdict_matched": 5,
+    "verdict_match_pct": 100.0,
+    "total_clean": 13,
+    "false_flags": 0,
+    "false_flag_pct": 0.0,
+    "unverified_quotes": 0,
+    "avg_claims_per_case": 5.0
+  },
+  "per_case": [
+    {
+      "id": "wrong_fact_01",
+      "category": "wrong_fact",
+      "total_claims": 3,
+      "total_planted": 1,
+      "caught": 1,
+      "verdict_matched": 1,
+      "total_clean": 2,
+      "false_flags": 0,
+      "unverified_quotes": 0,
+      "planted_detail": [
+        {
+          "text": "199,792 kilometers per second",
+          "expected_verdict": "contradicted",
+          "expected_error_type": "hallucinated_fact",
+          "caught": true,
+          "verdict_matched": true
+        }
+      ],
+      "clean_detail": [
+        {
+          "text": "Einstein published his theory of special relativity in 1905",
+          "falsely_flagged": false
+        },
+        {
+          "text": "Light takes about 8 minutes and 20 seconds to reach Earth from the Sun",
+          "falsely_flagged": false
+        }
+      ],
+      "reliability_score": 52,
+      "status": "success"
+    },
+    {
+      "id": "wrong_fact_02",
+      "category": "wrong_fact",
+      "total_claims": 3,
+      "total_planted": 1,
+      "caught": 1,
+      "verdict_matched": 1,
+      "total_clean": 2,
+      "false_flags": 0,
+      "unverified_quotes": 0,
+      "planted_detail": [
+        {
+          "text": "Tang Dynasty",
+          "expected_verdict": "contradicted",
+          "expected_error_type": "hallucinated_fact",
+          "caught": true,
+          "verdict_matched": true
+        }
+      ],
+      "clean_detail": [
+        {
+          "text": "stretches approximately 21,196 kilometers in total",
+          "falsely_flagged": false
+        },
+        {
+          "text": "primarily built to protect against invasions from northern nomadic groups",
+          "falsely_flagged": false
+        }
+      ],
+      "reliability_score": 52,
+      "status": "success"
+    },
+    {
+      "id": "wrong_fact_03",
+      "category": "wrong_fact",
+      "total_claims": 8,
+      "total_planted": 1,
+      "caught": 1,
+      "verdict_matched": 1,
+      "total_clean": 3,
+      "false_flags": 0,
+      "unverified_quotes": 0,
+      "planted_detail": [
+        {
+          "text": "in 1932",
+          "expected_verdict": "contradicted",
+          "expected_error_type": "hallucinated_fact",
+          "caught": true,
+          "verdict_matched": true
+        }
+      ],
+      "clean_detail": [
+        {
+          "text": "at St Mary's Hospital in London",
+          "falsely_flagged": false
+        },
+        {
+          "text": "a mold called Penicillium notatum was killing surrounding bacteria",
+          "falsely_flagged": false
+        },
+        {
+          "text": "earned Fleming a share of the 1945 Nobel Prize",
+          "falsely_flagged": false
+        }
+      ],
+      "reliability_score": 72,
+      "status": "success"
+    },
+    {
+      "id": "wrong_fact_04",
+      "category": "wrong_fact",
+      "total_claims": 5,
+      "total_planted": 1,
+      "caught": 1,
+      "verdict_matched": 1,
+      "total_clean": 3,
+      "false_flags": 0,
+      "unverified_quotes": 0,
+      "planted_detail": [
+        {
+          "text": "inner ear",
+          "expected_verdict": "contradicted",
+          "expected_error_type": "hallucinated_fact",
+          "caught": true,
+          "verdict_matched": true
+        }
+      ],
+      "clean_detail": [
+        {
+          "text": "approximately 206 bones in adulthood",
+          "falsely_flagged": false
+        },
+        {
+          "text": "Babies are born with about 270 bones",
+          "falsely_flagged": false
+        },
+        {
+          "text": "measuring about 3 millimeters",
+          "falsely_flagged": false
+        }
+      ],
+      "reliability_score": 65,
+      "status": "success"
+    },
+    {
+      "id": "wrong_fact_05",
+      "category": "wrong_fact",
+      "total_claims": 6,
+      "total_planted": 1,
+      "caught": 1,
+      "verdict_matched": 1,
+      "total_clean": 3,
+      "false_flags": 0,
+      "unverified_quotes": 0,
+      "planted_detail": [
+        {
+          "text": "spanning twelve countries",
+          "expected_verdict": "contradicted",
+          "expected_error_type": "hallucinated_fact",
+          "caught": true,
+          "verdict_matched": true
+        }
+      ],
+      "clean_detail": [
+        {
+          "text": "largest river in the world by volume",
+          "falsely_flagged": false
+        },
+        {
+          "text": "approximately 6,400 kilometers long",
+          "falsely_flagged": false
+        },
+        {
+          "text": "covers about 7 million square kilometers",
+          "falsely_flagged": false
+        }
+      ],
+      "reliability_score": 68,
+      "status": "success"
+    }
+  ]
+}
