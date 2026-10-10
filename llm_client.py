@@ -56,9 +56,16 @@ def get_client() -> genai.Client:
 
 def get_model_name() -> str:
     """
-    Returns the configured Gemini model name from .env, defaulting to 'gemini-2.5-flash'.
+    Returns the configured Gemini model name from .env, defaulting to 'gemini-3.8-flash'.
     """
-    return os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    return os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+
+
+def get_fallback_model_name() -> str:
+    """
+    Returns the configured fallback Gemini model name from .env, defaulting to 'gemini-3.7-flash'.
+    """
+    return os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.7-flash").strip()
 
 
 def clean_json_text(raw_text: str) -> str:
@@ -103,7 +110,7 @@ def call_llm_json(
       - QuotaExhaustedError: immediately raised without retrying if error contains 'PerDay'
         or retryDelay > 60s.
       - Short per-minute 429s: waits retryDelay (max 60s) and retries once.
-      - Transient 503 unavailable spikes: backoff and failover to flash-lite.
+      - Transient 503 unavailable spikes: backoff and failover to fallback model (GEMINI_FALLBACK_MODEL).
     """
     model_name = get_model_name()
     cache_enabled = os.getenv("LLM_CACHE", "on").strip().lower() != "off"
@@ -137,7 +144,7 @@ def call_llm_json(
         try:
             current_model = model_name
             if attempt > 0 and last_error and ("503" in str(last_error).lower() or "unavailable" in str(last_error).lower()):
-                current_model = "gemini-flash-lite-latest"
+                current_model = get_fallback_model_name()
 
             response = client.models.generate_content(
                 model=current_model,

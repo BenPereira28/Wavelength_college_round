@@ -139,6 +139,62 @@ class TestSecondOpinionServer(unittest.TestCase):
             response = self.client.post("/api/audit", json=payload)
             self.assertEqual(response.status_code, 503)
 
+    def test_11_extract_txt_endpoint_success(self):
+        """Test POST /api/extract extracts plain text successfully with no LLM calls."""
+        with patch("main.run_audit") as mock_audit:
+            files = {"file": ("document.txt", b"Ground truth reference data from extracted text.", "text/plain")}
+            response = self.client.post("/api/extract", files=files)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["file_type"], "txt")
+            self.assertIn("Ground truth reference data", data["text"])
+            self.assertEqual(data["truncated"], False)
+            # Ensure LLM pipeline was never invoked
+            mock_audit.assert_not_called()
+
+    def test_12_extract_empty_file_400(self):
+        """Test POST /api/extract returns 400 for empty file."""
+        files = {"file": ("empty.txt", b"", "text/plain")}
+        response = self.client.post("/api/extract", files=files)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("empty", response.json().get("detail", "").lower())
+
+    def test_13_extract_unsupported_extension_415(self):
+        """Test POST /api/extract returns 415 for unsupported extension."""
+        files = {"file": ("image.png", b"\x89PNG\r\n\x1a\n", "image/png")}
+        response = self.client.post("/api/extract", files=files)
+        self.assertEqual(response.status_code, 415)
+        self.assertIn("Unsupported file extension", response.json().get("detail", ""))
+
+    def test_14_extract_magic_byte_mismatch_400(self):
+        """Test POST /api/extract returns 400 if a file has .pdf extension but fake contents."""
+        files = {"file": ("fake.pdf", b"This is not a real PDF file header.", "application/pdf")}
+        response = self.client.post("/api/extract", files=files)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("PDF", response.json().get("detail", ""))
+
+    def test_15_extract_file_too_large_413(self):
+        """Test POST /api/extract returns 413 if file exceeds MAX_UPLOAD_MB."""
+        with patch.dict("os.environ", {"MAX_UPLOAD_MB": "0.001"}):  # ~1 KB cap
+            oversized_data = b"A" * 2048
+            files = {"file": ("oversized.txt", oversized_data, "text/plain")}
+            response = self.client.post("/api/extract", files=files)
+            self.assertEqual(response.status_code, 413)
+            self.assertIn("exceeds the maximum upload limit", response.json().get("detail", ""))
+
+    def test_16_extract_scanned_pdf_422(self):
+        """Test POST /api/extract returns 422 for a scanned/image-only PDF."""
+        import pypdf
+        import io
+        writer = pypdf.PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        buf = io.BytesIO()
+        writer.write(buf)
+        files = {"file": ("scanned.pdf", buf.getvalue(), "application/pdf")}
+        response = self.client.post("/api/extract", files=files)
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Scanned or image-only", response.json().get("detail", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -113,7 +113,7 @@ The score is clamped to `[0, 100]`. The full breakdown is returned in `score_bre
 ├── pipeline.py              # 6-stage audit pipeline (run_audit entry point)
 ├── llm_client.py            # Gemini SDK wrapper, disk cache, QuotaExhaustedError
 ├── requirements.txt         # Pinned Python dependencies
-├── .env.example             # Template for GEMINI_API_KEY, GEMINI_MODEL, LLM_CACHE
+├── .env.example             # Template for GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, LLM_CACHE
 ├── .gitignore               # Ignores .env, __pycache__/, .llm_cache/, venv/
 ├── sample_response.json     # Canonical sample audit result (Eiffel Tower example)
 ├── test_setup.py            # Step-1 diagnostic: checks packages and .env
@@ -152,7 +152,8 @@ pip install -r requirements.txt
 copy .env.example .env
 # Open .env in your editor and set:
 #   GEMINI_API_KEY=<your key from https://aistudio.google.com/>
-#   GEMINI_MODEL=gemini-2.5-flash        (or another model)
+#   GEMINI_MODEL=gemini-3.8-flash        (or another model)
+#   GEMINI_FALLBACK_MODEL=gemini-3.7-flash (optional fallback model)
 #   LLM_CACHE=on
 
 # 4. Verify setup
@@ -176,7 +177,7 @@ pip install -r requirements.txt
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env — set GEMINI_API_KEY, GEMINI_MODEL, LLM_CACHE
+# Edit .env — set GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, LLM_CACHE
 
 # 4. Verify setup
 python test_setup.py
@@ -303,6 +304,23 @@ Audits an AI answer against source material.
 | `GET` | `/health` | Returns `{"status": "healthy"}` |
 | `GET` | `/api/status` | API key presence, active model, mode (`live_ready` or `sample_fallback_ready`) |
 | `GET` | `/api/sample-audit` | Returns the canonical sample from `sample_response.json` |
+| `POST` | `/api/extract` | Accepts multipart `file` (.pdf, .docx, .txt) and returns extracted plain text with metadata |
+
+### `POST /api/extract` (Document Upload)
+
+Extracts text in-memory from uploaded documents to populate the Source Material or AI Answer boxes.
+
+- **Supported Formats:** PDF (`.pdf`), Microsoft Word (`.docx`), and Plain Text (`.txt`).
+- **Encoding Support:** TXT files decode automatically via UTF-8 (with BOM), UTF-16, CP1252, and Latin-1 fallbacks.
+- **Limits:** 5 MB default upload limit (configurable via `MAX_UPLOAD_MB`) and 100 pages for PDF (configurable via `MAX_PDF_PAGES`).
+- **Scanned / Image-Only PDFs:** OCR is not supported. Uploading a scanned PDF returns HTTP 422 with a clear notice explaining no text layer was found.
+- **Length Cap Behavior:** If extracted text exceeds 20,000 characters, it is safely truncated to the pipeline limit, `truncated: true` is set, and a prominent warning banner is surfaced to the user.
+- **Security & Privacy:**
+  - Files are processed strictly in memory using bounded chunk reading to prevent memory exhaustion.
+  - Files are **never** executed, rendered, or saved to disk permanently.
+  - Format validation is enforced using byte magic signatures (`%PDF-`, Zip document inspection for `word/document.xml`), rejecting legacy `.doc`, macros (`.docm`), and disguise files.
+  - Extracted text is treated as untrusted data and sanitized.
+  - Zero LLM quota or Gemini API calls are consumed during extraction.
 
 **Input limits:** Both `source` and `answer` are capped at 20,000 characters. Empty inputs return HTTP 400.
 
@@ -325,7 +343,7 @@ When a daily quota limit is hit, `llm_client.py` raises `QuotaExhaustedError` im
 
 The `/audit` endpoint catches `QuotaExhaustedError` and falls back to the canonical sample response with a notice appended to `assessment_text`. The eval harness stops cleanly, prints how many cases finished, and reminds you that finished cases are cached.
 
-For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits and retries once. For 503 / unavailable errors, it retries with exponential backoff and falls over to `gemini-flash-lite-latest`.
+For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits and retries once. For 503 / unavailable errors, it retries with exponential backoff and falls over to the fallback model configured via `GEMINI_FALLBACK_MODEL` (default: `gemini-3.7-flash`).
 
 ---
 
@@ -334,7 +352,7 @@ For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits a
 | Symptom | Cause | Fix |
 |---|---|---|
 | `QuotaExhaustedError` / 429 with `retryDelay` > 60 s | Daily free-tier quota used up | Wait until the quota resets (usually next day), or use a different API key |
-| `Model not found` or 404 from Gemini | `GEMINI_MODEL` in `.env` is set to a model name that doesn't exist | Change `GEMINI_MODEL` to a valid model (e.g. `gemini-2.5-flash`) |
+| `Model not found` or 404 from Gemini | `GEMINI_MODEL` in `.env` is set to a model name that doesn't exist | Change `GEMINI_MODEL` to a valid model (e.g. `gemini-3.8-flash`) |
 | `GEMINI_API_KEY is not set` on startup | `.env` is missing or key is still the placeholder | Copy `.env.example` to `.env` and paste your real key from [AI Studio](https://aistudio.google.com/) |
 | `Address already in use` (port 8000) | Another process is using port 8000 | Stop the other process, or run `uvicorn main:app --port 8001` |
 | `ModuleNotFoundError` for `google.genai`, `pydantic`, etc. | Dependencies not installed or wrong venv | Activate your virtual environment and run `pip install -r requirements.txt` |
@@ -380,3 +398,5 @@ These limitations are derived from what the code actually does; they are not hyp
 6. **The 20,000-character input cap.** Both `source` and `answer` are limited to 20,000 characters by `main.py`. Longer documents must be trimmed before submission.
 
 7. **Three LLM calls per audit.** Each audit makes 3 API calls (extraction, judging, reasoning). On the free tier this limits throughput and can trigger quota exhaustion after a moderate number of audits per day.
+
+8. **Document layout and lack of OCR.** File extraction relies on underlying text streams and does not perform OCR. Scanned or image-only documents cannot be read. Complex multi-column layouts, forms, mathematical formulas, or stylized callouts may extract out-of-order or with irregular spacing.

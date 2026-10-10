@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +31,9 @@ from pydantic import BaseModel, Field
 # Core verification pipeline & LLM error types
 from pipeline import run_audit, AuditResult
 from llm_client import QuotaExhaustedError
+
+# Document extraction
+from file_extract import extract_text, ExtractionError
 
 # ------------------------------------------------------------------------------
 # APP INITIALIZATION
@@ -126,7 +129,7 @@ def health_check():
 def api_status():
     """Returns system status, active model, and Gemini key availability."""
     has_key = has_valid_gemini_key()
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
     return {
         "status": "online",
         "service": "Second Opinion Audit Platform",
@@ -144,6 +147,88 @@ def get_sample_audit():
     data["is_sample_data"] = True
     data["data_source"] = "canonical_sample_response_json"
     return data
+
+
+@app.post("/api/extract", summary="Extract Text from Document (PDF, TXT, DOCX)")
+async def extract_document(file: UploadFile = File(...)):
+    """
+    Extracts text from an uploaded PDF, TXT, or DOCX document.
+    Does NOT call Gemini API or consume LLM quota.
+    Validates magic bytes, enforces configurable size and page caps,
+    and returns in-memory extracted text.
+    """
+    # Configurable limits from environment
+    max_mb_str = os.getenv("MAX_UPLOAD_MB", "5").strip()
+    try:
+        max_upload_mb = float(max_mb_str)
+    except ValueError:
+        max_upload_mb = 5.0
+    max_bytes = int(max_upload_mb * 1024 * 1024)
+
+    max_pages_str = os.getenv("MAX_PDF_PAGES", "100").strip()
+    try:
+        max_pdf_pages = int(max_pages_str)
+    except ValueError:
+        max_pdf_pages = 100
+
+    filename = file.filename or "unknown"
+    ext = os.path.splitext(filename.lower())[1]
+
+    # Pre-check extension
+    allowed_exts = {".pdf", ".txt", ".docx"}
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file extension '{ext or 'none'}'. Supported formats are .pdf, .docx, and .txt."
+        )
+
+    # Bounded read to prevent memory exhaustion
+    buffer = bytearray()
+    chunk_size = 64 * 1024  # 64 KB chunks
+
+    try:
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            if len(buffer) > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds the maximum upload limit of {max_upload_mb:g} MB."
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed reading uploaded file: {str(e)}"
+        )
+    finally:
+        await file.close()
+
+    raw_data = bytes(buffer)
+    if len(raw_data) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # Extract text with magic bytes validation and formatting cleanup
+    try:
+        result = extract_text(
+            filename=filename,
+            data=raw_data,
+            max_length_cap=20_000,
+            max_pdf_pages=max_pdf_pages,
+            insert_page_markers=True
+        )
+        return {
+            "filename": filename,
+            **result
+        }
+    except ExtractionError as ee:
+        raise HTTPException(status_code=ee.status_code, detail=ee.message)
+    except Exception as e:
+        logging.error("File extraction error: %s", type(e).__name__)
+        raise HTTPException(status_code=400, detail="The file could not be extracted.")
 
 
 @app.post("/audit", summary="Run Full Audit Pipeline")

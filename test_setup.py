@@ -32,10 +32,12 @@ def main():
     # 3. Check .env loading
     load_dotenv()
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+    fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.7-flash").strip()
 
     print("-" * 60)
-    print(f"Target Gemini Model: {model}")
+    print(f"Target Gemini Model:   {model}")
+    print(f"Fallback Gemini Model: {fallback_model}")
 
     if not api_key or api_key == "your_gemini_api_key_here":
         print("[!] GEMINI_API_KEY is currently empty or set to placeholder.")
