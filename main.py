@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 # Import our core audit pipeline
 from pipeline import run_audit, AuditResult
+from llm_client import QuotaExhaustedError
 
 # ------------------------------------------------------------------------------
 # APP INITIALIZATION
@@ -39,7 +40,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -114,6 +115,18 @@ def audit_text(payload: AuditRequest):
     source_clean = payload.source.strip()
     answer_clean = payload.answer.strip()
 
+    if len(payload.source) > 20_000:
+        raise HTTPException(
+            status_code=400,
+            detail="Source material must be 20,000 characters or fewer."
+        )
+
+    if len(payload.answer) > 20_000:
+        raise HTTPException(
+            status_code=400,
+            detail="AI answer must be 20,000 characters or fewer."
+        )
+
     if not source_clean:
         raise HTTPException(
             status_code=400,
@@ -130,11 +143,16 @@ def audit_text(payload: AuditRequest):
         # Run our 6-stage pipeline
         result = run_audit(source_clean, answer_clean)
         return result
-    except Exception as e:
-        # Catch unexpected pipeline errors and return a clean 500 error
+    except QuotaExhaustedError:
         raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred while auditing: {str(e)}"
+            status_code=429,
+            detail="Gemini daily quota is exhausted. Try again later or switch model/key."
+        )
+    except Exception:
+        # Do not expose provider details or raw exception text to API clients.
+        raise HTTPException(
+            status_code=502,
+            detail="The language model service could not complete the audit."
         )
 
 

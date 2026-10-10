@@ -8,7 +8,8 @@ Why this file exists:
 - If you ever want to swap providers (e.g., to OpenAI, Anthropic, or a local
   model like Ollama), you ONLY need to edit this file!
 - It handles API key loading, model selection, structured JSON prompting,
-  and automatic retries if the model returns malformed JSON.
+  disk caching (.llm_cache/), quota exhaustion detection (QuotaExhaustedError),
+  and automatic retries.
 --------------------------------------------------------------------------------
 """
 
@@ -16,6 +17,8 @@ import os
 import json
 import re
 import time
+import hashlib
+from pathlib import Path
 from typing import Any, Optional
 from dotenv import load_dotenv
 from google import genai
@@ -26,6 +29,14 @@ load_dotenv()
 
 # Global cached client
 _client: Optional[genai.Client] = None
+
+# Cache directory
+CACHE_DIR = Path(__file__).resolve().parent / ".llm_cache"
+
+
+class QuotaExhaustedError(Exception):
+    """Raised when the daily Gemini free-tier quota is exhausted for a key/model."""
+    pass
 
 
 def get_client() -> genai.Client:
@@ -45,9 +56,9 @@ def get_client() -> genai.Client:
 
 def get_model_name() -> str:
     """
-    Returns the configured Gemini model name from .env, defaulting to 'gemini-flash-latest'.
+    Returns the configured Gemini model name from .env, defaulting to 'gemini-3.5-flash'.
     """
-    return os.getenv("GEMINI_MODEL", "gemini-flash-latest").strip()
+    return os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
 
 
 def clean_json_text(raw_text: str) -> str:
@@ -56,11 +67,25 @@ def clean_json_text(raw_text: str) -> str:
     so it can be reliably parsed by json.loads().
     """
     text = raw_text.strip()
-    # Remove markdown code block fences if present
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s*```$", "", text)
     return text.strip()
+
+
+def extract_retry_delay(err: Exception) -> Optional[int]:
+    """
+    Extracts retryDelay in seconds from the error string or payload if present.
+    Example: 'retryDelay': '48918s' or 'retryDelay': '30s'
+    """
+    err_str = str(err)
+    match = re.search(r"retrydelay['\":\s]+(\d+)", err_str, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None
 
 
 def call_llm_json(
@@ -72,22 +97,35 @@ def call_llm_json(
     """
     Sends a prompt to the LLM and guarantees a parsed JSON response (dict or list).
     
-    If the response is malformed or an error occurs, it will retry up to `retries` times.
-    Waits 5, 15, then 30 seconds if a rate limit / quota (429) error occurs,
-    and 1 second for JSON decode or parsing errors.
-    
-    Args:
-        prompt: The user query or task instructions.
-        system_instruction: Optional system persona or constraints.
-        retries: Number of retry attempts on failure.
-        temperature: Creativity parameter (lower = more deterministic for audits).
-        
-    Returns:
-        Parsed Python dictionary or list.
+    Features:
+      - Disk caching (.llm_cache/) keyed on sha256(model + system_instruction + prompt).
+        Disabled if LLM_CACHE=off in .env.
+      - QuotaExhaustedError: immediately raised without retrying if error contains 'PerDay'
+        or retryDelay > 60s.
+      - Short per-minute 429s: waits retryDelay (max 60s) and retries once.
+      - Transient 503 unavailable spikes: backoff and failover to flash-lite.
     """
-    client = get_client()
     model_name = get_model_name()
+    cache_enabled = os.getenv("LLM_CACHE", "on").strip().lower() != "off"
 
+    # 1. Check disk cache before making any API call
+    cache_key = hashlib.sha256(
+        (model_name + (system_instruction or "") + prompt).encode("utf-8")
+    ).hexdigest()
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+
+    if cache_enabled and cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            print("[cache hit]", flush=True)
+            return cached_data
+        except Exception:
+            # If cache read fails, proceed to call API
+            pass
+
+    # 2. API Call Execution
+    client = get_client()
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         temperature=temperature,
@@ -95,11 +133,16 @@ def call_llm_json(
     )
 
     last_error: Optional[Exception] = None
+    has_retried_429 = False
 
     for attempt in range(retries + 1):
         try:
+            current_model = model_name
+            if attempt > 0 and last_error and ("503" in str(last_error).lower() or "unavailable" in str(last_error).lower()):
+                current_model = "gemini-flash-lite-latest"
+
             response = client.models.generate_content(
-                model=model_name,
+                model=current_model,
                 contents=prompt,
                 config=config
             )
@@ -108,15 +151,42 @@ def call_llm_json(
             cleaned = clean_json_text(raw_text)
             
             parsed = json.loads(cleaned)
+
+            # 3. Store valid result in disk cache
+            if cache_enabled:
+                try:
+                    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(parsed, f, indent=2)
+                except Exception:
+                    pass
+
             return parsed
 
         except (json.JSONDecodeError, Exception) as e:
             last_error = e
+            err_text = str(e)
+            err_lower = err_text.lower()
+            retry_delay = extract_retry_delay(e)
+
+            # Rule 1: Daily quota exhaustion check (PerDay or retryDelay > 60s)
+            if "perday" in err_lower or (retry_delay is not None and retry_delay > 60):
+                raise QuotaExhaustedError(
+                    "Daily Gemini free-tier quota used up for this key and model. Try again later or switch model/key."
+                ) from e
+
             if attempt < retries:
-                err_text = str(e).lower()
-                if "429" in err_text or "quota" in err_text:
-                    quota_delays = [5, 15, 30]
-                    delay = quota_delays[attempt] if attempt < len(quota_delays) else 30
+                # Rule 2: Short per-minute 429
+                if "429" in err_lower or "quota" in err_lower:
+                    if has_retried_429:
+                        # Only retry once for short 429s
+                        break
+                    has_retried_429 = True
+                    wait_time = min(60, retry_delay) if retry_delay else 5
+                    time.sleep(wait_time)
+                elif "503" in err_lower or "unavailable" in err_lower:
+                    demand_delays = [2, 4, 8]
+                    delay = demand_delays[attempt] if attempt < len(demand_delays) else 5
                     time.sleep(delay)
                 else:
                     time.sleep(1.0)

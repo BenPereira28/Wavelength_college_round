@@ -3,10 +3,12 @@
 
 # Python cache & build files
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
 .pytest_cache/
+.llm_cache/
 
 # Virtual environments
 venv/

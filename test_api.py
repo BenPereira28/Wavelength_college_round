@@ -8,10 +8,39 @@ a running background server.
 """
 
 import sys
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from main import app
+from pipeline import AuditResult, AuditSummary, ReasoningReport
 
 client = TestClient(app)
+# Only the standalone script may opt into the real Gemini-backed audit.
+LIVE = __name__ == "__main__" and "--live" in sys.argv
+
+
+def mock_audit_result(source: str, answer: str) -> AuditResult:
+    """Return a valid audit response without contacting Gemini."""
+    return AuditResult(
+        source_text=source,
+        original_answer=answer,
+        claims=[],
+        reasoning=ReasoningReport(
+            has_reasoning_flaws=False,
+            reasoning_summary="Mock audit completed.",
+            issues=[]
+        ),
+        summary=AuditSummary(
+            total_claims=0,
+            supported_count=0,
+            contradicted_count=0,
+            insufficient_evidence_count=0,
+            problematic_count=0,
+            unverified_quotes_count=0,
+            reliability_score=100,
+            score_breakdown={"final_score": 100},
+            assessment_text="Mock audit completed."
+        )
+    )
 
 def test_endpoints():
     print("=" * 60)
@@ -38,13 +67,18 @@ def test_endpoints():
     assert res_empty.status_code == 400, f"Expected 400, got {res_empty.status_code}"
     print("    [OK] POST /audit correctly rejected empty input with HTTP 400.")
 
-    # 4. Test POST /audit with sample data
-    print("[4] Testing POST /audit with real audit request ...")
+    # 4. Test POST /audit with sample data. Mock by default so this script
+    # never calls Gemini unless explicitly run with `python test_api.py --live`.
+    print("[4] Testing POST /audit with {}audit request ...".format("real " if LIVE else "mocked "))
     payload = {
         "source": "Water boils at 100 degrees Celsius at standard atmospheric pressure.",
         "answer": "Water boils at 100 degrees Celsius at sea level, but boils at 200 degrees on Mount Everest."
     }
-    res_audit = client.post("/audit", json=payload)
+    if LIVE:
+        res_audit = client.post("/audit", json=payload)
+    else:
+        with patch("main.run_audit", side_effect=mock_audit_result):
+            res_audit = client.post("/audit", json=payload)
     assert res_audit.status_code == 200, f"Expected 200, got {res_audit.status_code}: {res_audit.text}"
     
     data = res_audit.json()
@@ -59,4 +93,8 @@ def test_endpoints():
     print("=" * 60)
 
 if __name__ == "__main__":
-    test_endpoints()
+    if LIVE:
+        test_endpoints()
+    else:
+        with patch("main.run_audit", side_effect=mock_audit_result):
+            test_endpoints()

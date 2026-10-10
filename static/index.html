@@ -3,46 +3,266 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Second Opinion - AI Auditing Platform</title>
-    <style>
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .card {
-            background-color: #1e293b;
-            padding: 2.5rem;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            max-width: 500px;
-        }
-        h1 { color: #38bdf8; margin-top: 0; }
-        p { color: #94a3b8; line-height: 1.6; }
-        .badge {
-            background-color: #0284c7;
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            display: inline-block;
-            margin-bottom: 1rem;
-        }
-    </style>
+    <title>Second Opinion | AI Verification & Auditing Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="card">
-        <div class="badge">FastAPI Backend Online</div>
-        <h1>Second Opinion</h1>
-        <p>The backend API is running and ready. The complete interactive frontend with highlighting and evidence side-panel will be loaded in Step 4.</p>
-        <p>API Endpoint: <code>POST /audit</code></p>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo-icon">🔍</div>
+                <div>
+                    <h1 class="logo-title">Second Opinion</h1>
+                    <p class="logo-tagline">AI Fact-Checking, Hallucination Auditing & Safety Platform</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <span class="tech-pill">Google Gemini Powered</span>
+                <span class="tech-pill-outline">FastAPI Backend</span>
+            </div>
+        </header>
+
+        <!-- PRESET SELECTOR BAR -->
+        <section class="preset-section">
+            <div class="preset-label">Demo Scenarios:</div>
+            <div class="preset-buttons">
+                <button type="button" class="preset-btn active" onclick="loadDemo(0)">
+                    🚀 Demo 1: Mars Rover (Hallucination + Unsafe Advice)
+                </button>
+                <button type="button" class="preset-btn" onclick="loadDemo(1)">
+                    💊 Demo 2: Medical Advisory (Overdose & Allergy Hazard)
+                </button>
+                <button type="button" class="preset-btn" onclick="loadDemo(2)">
+                    ☀️ Demo 3: Clean Energy (100% Verified Claims)
+                </button>
+            </div>
+        </section>
+
+        <!-- INPUT SECTION -->
+        <main class="input-grid">
+            <!-- SOURCE MATERIAL INPUT -->
+            <div class="card input-card">
+                <div class="card-header">
+                    <span class="card-title">
+                        <span class="indicator-dot source-dot"></span>
+                        Trusted Source Material
+                    </span>
+                    <span class="char-count" id="sourceCount">0 chars</span>
+                </div>
+                <p class="card-desc">Ground-truth reference document or article used to verify factual statements.</p>
+                <textarea 
+                    id="sourceInput" 
+                    class="audit-textarea" 
+                    placeholder="Paste trusted reference article, documentation, or study here..."
+                    rows="8"
+                ></textarea>
+            </div>
+
+            <!-- AI ANSWER INPUT -->
+            <div class="card input-card">
+                <div class="card-header">
+                    <span class="card-title">
+                        <span class="indicator-dot answer-dot"></span>
+                        AI-Generated Answer
+                    </span>
+                    <span class="char-count" id="answerCount">0 chars</span>
+                </div>
+                <p class="card-desc">The AI response to audit for hallucinations, unsupported claims, and safety risks.</p>
+                <textarea 
+                    id="answerInput" 
+                    class="audit-textarea" 
+                    placeholder="Paste AI-generated answer or generated summary here..."
+                    rows="8"
+                ></textarea>
+            </div>
+        </main>
+
+        <!-- ACTION BAR -->
+        <div class="action-bar">
+            <div class="action-left">
+                <button id="auditBtn" class="btn btn-primary" onclick="triggerAudit()">
+                    <span id="auditBtnIcon">⚡</span>
+                    <span id="auditBtnText">Run Comprehensive Audit</span>
+                </button>
+                <button id="clearBtn" class="btn btn-secondary" onclick="clearInputs()">Clear</button>
+            </div>
+            <div id="loadingStatus" class="loading-status" style="display: none;">
+                <div class="spinner"></div>
+                <span id="loadingMessage">Auditing claims with Gemini...</span>
+            </div>
+        </div>
+
+        <!-- ERROR BANNER -->
+        <div id="errorBanner" class="error-banner" style="display: none;">
+            <span class="error-icon">⚠️</span>
+            <span id="errorMessage">An error occurred</span>
+        </div>
+
+        <!-- AUDIT RESULTS SECTION -->
+        <section id="resultsSection" class="results-section" style="display: none;">
+            
+            <!-- SUMMARY SCOREBOARD -->
+            <div class="card summary-card">
+                <div class="summary-top">
+                    <!-- RELIABILITY SCORE GAUGE -->
+                    <div class="score-box" id="scoreBox">
+                        <div class="score-circle">
+                            <span class="score-number" id="scoreNumber">--</span>
+                            <span class="score-denom">/100</span>
+                        </div>
+                        <div class="score-label" id="scoreLabel">Reliability Score</div>
+                    </div>
+
+                    <!-- SUMMARY STATS METRICS -->
+                    <div class="summary-metrics">
+                        <div class="assessment-banner" id="assessmentText">
+                            Analyzing claims against source...
+                        </div>
+
+                        <div class="stats-row">
+                            <div class="stat-badge stat-total">
+                                <span class="stat-num" id="statTotal">0</span>
+                                <span class="stat-desc">Total Claims</span>
+                            </div>
+                            <div class="stat-badge stat-supported">
+                                <span class="stat-num" id="statSupported">0</span>
+                                <span class="stat-desc">Supported</span>
+                            </div>
+                            <div class="stat-badge stat-contradicted">
+                                <span class="stat-num" id="statContradicted">0</span>
+                                <span class="stat-desc">Contradicted</span>
+                            </div>
+                            <div class="stat-badge stat-insufficient">
+                                <span class="stat-num" id="statInsufficient">0</span>
+                                <span class="stat-desc">Insufficient Evidence</span>
+                            </div>
+                        </div>
+
+                        <!-- SCORE BREAKDOWN PILLS -->
+                        <div class="breakdown-row" id="breakdownRow"></div>
+                    </div>
+                </div>
+
+                <!-- CONFIDENCE DISCLAIMER NOTE -->
+                <div class="confidence-disclaimer">
+                    <span class="info-icon">ℹ️</span>
+                    <span><strong>Auditor Transparency:</strong> AI confidence is an internal certainty estimate, not mathematical proof of correctness. Every claim judgment below is verified against verbatim source citations.</span>
+                </div>
+            </div>
+
+            <!-- CONTROLS & FILTER BAR -->
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <span class="filter-label">Filter View:</span>
+                    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All Claims</button>
+                    <button class="filter-btn" data-filter="flagged" onclick="setFilter('flagged')">🚩 Flagged Errors Only</button>
+                    <button class="filter-btn" data-filter="supported" onclick="setFilter('supported')">✅ Supported Only</button>
+                </div>
+                <div class="legend-group">
+                    <span class="legend-item"><span class="legend-chip chip-supported"></span> Supported</span>
+                    <span class="legend-item"><span class="legend-chip chip-insufficient"></span> Insufficient Evidence</span>
+                    <span class="legend-item"><span class="legend-chip chip-contradicted"></span> Contradicted</span>
+                </div>
+            </div>
+
+            <!-- TWO-COLUMN AUDIT INSPECTION DECK -->
+            <div class="inspection-deck">
+                
+                <!-- COLUMN 1: INTERACTIVE HIGHLIGHTED ANSWER -->
+                <div class="deck-column answer-column">
+                    <div class="column-header">
+                        <span class="column-title">Audited AI Answer (Interactive Spans)</span>
+                        <span class="column-hint">Click any highlighted statement to inspect evidence</span>
+                    </div>
+                    <div id="highlightedAnswerContainer" class="highlighted-text-box"></div>
+
+                    <!-- UNLOCATED CLAIMS DRAWER (If any claims couldn't be mapped directly to substring) -->
+                    <div id="unlocatedClaimsContainer" class="unlocated-drawer" style="display: none;">
+                        <div class="unlocated-title">Additional Extracted Claims:</div>
+                        <div id="unlocatedClaimsList"></div>
+                    </div>
+                </div>
+
+                <!-- COLUMN 2: INSPECTOR SIDE PANEL -->
+                <div class="deck-column inspector-column">
+                    
+                    <!-- CLAIM INSPECTOR CARD -->
+                    <div class="card inspector-card">
+                        <div class="inspector-card-header">
+                            <span class="column-title">Claim Evidence Inspector</span>
+                            <span id="activeClaimBadge" class="claim-index-badge">Claim #1</span>
+                        </div>
+
+                        <div id="inspectorEmptyState" class="inspector-empty" style="display: none;">
+                            Click any highlighted claim on the left to inspect its evidence and verification.
+                        </div>
+
+                        <div id="inspectorContent" class="inspector-content">
+                            <!-- STATEMENT -->
+                            <div class="inspector-row">
+                                <div class="inspector-field-label">Atomic Statement</div>
+                                <blockquote id="inspectorClaimText" class="inspector-quote"></blockquote>
+                            </div>
+
+                            <!-- VERDICT & ERROR TYPE BADGES -->
+                            <div class="badge-row">
+                                <div>
+                                    <div class="inspector-field-label">Verdict</div>
+                                    <span id="inspectorVerdict" class="pill pill-verdict">--</span>
+                                </div>
+                                <div>
+                                    <div class="inspector-field-label">Error Category</div>
+                                    <span id="inspectorErrorType" class="pill pill-error">--</span>
+                                </div>
+                                <div>
+                                    <div class="inspector-field-label">Confidence</div>
+                                    <span id="inspectorConfidence" class="pill pill-conf">--</span>
+                                </div>
+                            </div>
+
+                            <!-- EXPLANATION -->
+                            <div class="inspector-row">
+                                <div class="inspector-field-label">Auditor Justification</div>
+                                <p id="inspectorExplanation" class="inspector-explanation"></p>
+                            </div>
+
+                            <!-- EVIDENCE IN SOURCE -->
+                            <div class="inspector-row">
+                                <div class="inspector-field-label flex-between">
+                                    <span>Verbatim Source Evidence</span>
+                                    <span id="inspectorQuoteStatus" class="verification-badge">--</span>
+                                </div>
+                                <div id="inspectorEvidenceBox" class="evidence-box"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- REASONING & SAFETY REPORT CARD -->
+                    <div class="card reasoning-card">
+                        <div class="reasoning-header">
+                            <span class="column-title">Logical Reasoning & Safety Check</span>
+                            <span id="reasoningStatusBadge" class="pill">Sound</span>
+                        </div>
+                        <p id="reasoningSummary" class="reasoning-summary-text"></p>
+                        <div id="reasoningIssuesList" class="issues-list"></div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="app-footer">
+            <p>Second Opinion • Built with Python, FastAPI, and Google Gemini API • Google Developer Groups Hackathon</p>
+        </footer>
     </div>
+
+    <script src="/static/app.js"></script>
 </body>
 </html>

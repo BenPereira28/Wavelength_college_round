@@ -223,7 +223,7 @@ def step_1_extract_claims(ai_answer: str) -> List[ExtractedClaim]:
 Analyze the following AI-generated text and extract all distinct, atomic factual statements or claims.
 
 Rules:
-1. Each claim must be an atomic factual claim (one single verifiable fact).
+1. Each claim must be an atomic factual claim (one single verifiable fact). Break sentences with multiple distinct facts (such as location, date, or events) into separate atomic claims.
 2. "original_text_quote" MUST be an EXACT substring from the AI answer text below.
 3. Keep claims in the order they appear.
 
