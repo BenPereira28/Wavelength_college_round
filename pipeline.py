@@ -7,7 +7,7 @@ This script executes the complete 6-stage auditing process:
   1. Claim Extraction: Breaks the AI answer into atomic factual claims with
      substring positions.
   2. Evidence Retrieval: For short sources uses full text; for long sources
-     retrieves the most relevant chunks per claim.
+     retrieves the most relevant chunks per claim using enhanced n-gram scoring.
   3. Claim Judging: The LLM evaluates each claim against the source evidence.
   4. Programmatic Verification: Strictly checks whether LLM-quoted evidence
      actually exists verbatim in the source (never blindly trusts the LLM).
@@ -20,6 +20,7 @@ Plain English explanations are included above every class and function.
 
 import re
 from typing import List, Literal, Optional
+from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, Field
 
 from llm_client import call_llm_json
@@ -39,6 +40,7 @@ class ExtractedClaim(BaseModel):
     )
     start_char: Optional[int] = None
     end_char: Optional[int] = None
+    located: bool = True
 
 
 class ClaimJudgment(BaseModel):
@@ -46,8 +48,9 @@ class ClaimJudgment(BaseModel):
     claim_id: int
     claim_text: str
     original_text_quote: str
-    start_char: int
-    end_char: int
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    located: bool = True
     verdict: Literal["supported", "contradicted", "insufficient_evidence"]
     error_type: Literal[
         "none",
@@ -60,7 +63,7 @@ class ClaimJudgment(BaseModel):
     quote_verified: bool = False
     quote_char_start: Optional[int] = None
     quote_char_end: Optional[int] = None
-    explanation: str
+    explanation: str = ""
     confidence: Literal["high", "medium", "low"]
 
 
@@ -87,6 +90,7 @@ class AuditSummary(BaseModel):
     problematic_count: int
     unverified_quotes_count: int
     reliability_score: int  # 0 to 100
+    score_breakdown: dict = Field(default_factory=dict)
     assessment_text: str
 
 
@@ -103,37 +107,58 @@ class AuditResult(BaseModel):
 # HELPER FUNCTIONS: SUBSTRING SEARCH & EVIDENCE RETRIEVAL
 # ==============================================================================
 
-def find_substring_span(source: str, target: str) -> tuple[int, int]:
+def find_substring_span_incremental(source: str, target: str, min_start: int = 0) -> tuple[int, int]:
     """
-    Finds the exact start and end character offsets of `target` in `source`.
-    If exact match fails, attempts a case-insensitive and whitespace-flexible match.
+    Finds start and end offsets of `target` in `source`, searching forward from `min_start`
+    first to avoid anchoring to earlier duplicate occurrences. Falls back to whole-string search.
     Returns (start, end) or (-1, -1) if not found.
     """
     if not target or not source:
         return -1, -1
 
-    # 1. Exact match attempt
+    # 1. Forward search from min_start
+    idx = source.find(target, min_start)
+    if idx != -1:
+        return idx, idx + len(target)
+
+    # 2. Case-insensitive forward search
+    idx = source.lower().find(target.lower(), min_start)
+    if idx != -1:
+        return idx, idx + len(target)
+
+    # 3. Whole-string fallback
     idx = source.find(target)
     if idx != -1:
         return idx, idx + len(target)
 
-    # 2. Case-insensitive attempt
     idx = source.lower().find(target.lower())
     if idx != -1:
         return idx, idx + len(target)
 
-    # 3. Normalized whitespace attempt
+    # 4. Normalized whitespace attempt
     cleaned_target = " ".join(target.split())
-    cleaned_source = " ".join(source.split())
-    if cleaned_target in cleaned_source:
-        # Find approximate match location using regex pattern with flexible spaces
+    if cleaned_target:
         escaped_words = [re.escape(w) for w in cleaned_target.split()]
         pattern = r"\s+".join(escaped_words)
+        
+        # Check from min_start forward
+        match = re.search(pattern, source[min_start:], re.IGNORECASE)
+        if match:
+            return min_start + match.start(), min_start + match.end()
+            
+        # Check entire source
         match = re.search(pattern, source, re.IGNORECASE)
         if match:
             return match.start(), match.end()
 
     return -1, -1
+
+
+def find_substring_span(source: str, target: str) -> tuple[int, int]:
+    """
+    Backward-compatible helper: finds the exact start and end offsets of target in source.
+    """
+    return find_substring_span_incremental(source, target, min_start=0)
 
 
 def chunk_text(text: str, chunk_size: int = 400, overlap: int = 80) -> List[str]:
@@ -166,7 +191,7 @@ def retrieve_evidence_for_claims(source: str, claims: List[ExtractedClaim]) -> d
     Step 2: Evidence Retrieval.
     - If the source is short (<= 1500 chars), return the entire source for all claims.
     - If the source is long, split into chunks and select the top relevant chunks
-      using keyword overlap.
+      using unigram + bigram overlap scoring.
     """
     evidence_map = {}
 
@@ -181,8 +206,10 @@ def retrieve_evidence_for_claims(source: str, claims: List[ExtractedClaim]) -> d
     stopwords = {"the", "a", "an", "is", "are", "was", "were", "and", "or", "in", "on", "at", "to", "for", "of", "with"}
 
     for claim in claims:
-        # Extract meaningful keywords from claim
-        words = set(re.findall(r"\w+", claim.claim_text.lower())) - stopwords
+        # Extract meaningful unigrams and bigrams from claim
+        words = [w for w in re.findall(r"\w+", claim.claim_text.lower()) if w not in stopwords]
+        bigrams = [f"{words[i]} {words[i+1]}" for i in range(len(words)-1)] if len(words) > 1 else []
+
         if not words:
             evidence_map[claim.claim_id] = source[:1500]
             continue
@@ -190,15 +217,17 @@ def retrieve_evidence_for_claims(source: str, claims: List[ExtractedClaim]) -> d
         scored_chunks = []
         for ch in chunks:
             ch_lower = ch.lower()
-            score = sum(1 for w in words if w in ch_lower)
-            scored_chunks.append((score, ch))
+            unigram_score = sum(1 for w in words if w in ch_lower)
+            bigram_score = sum(3 for bg in bigrams if bg in ch_lower)
+            total_score = unigram_score + bigram_score
+            scored_chunks.append((total_score, ch))
 
         # Sort by score descending and take top 2 chunks
         scored_chunks.sort(key=lambda x: x[0], reverse=True)
         top_chunks = [ch for score, ch in scored_chunks[:2] if score > 0]
 
         if not top_chunks:
-            # Fallback to the first chunk if no keyword overlap
+            # Fallback to the highest scoring chunk even if score == 0 (best approximation)
             evidence_map[claim.claim_id] = chunks[0]
         else:
             evidence_map[claim.claim_id] = "\n\n---\n\n".join(top_chunks)
@@ -215,12 +244,13 @@ def step_1_extract_claims(ai_answer: str) -> List[ExtractedClaim]:
     Stage 1: Claim Extraction.
     Sends the AI answer to the LLM and extracts atomic factual claims.
     Each claim must include the exact substring quote from the answer.
+    Uses incremental searching to accurately locate repeated phrases.
     """
     prompt = f"""You are an expert fact-checking parser.
 Analyze the following AI-generated text and extract all distinct, atomic factual statements or claims.
 
 Rules:
-1. Each claim must be an atomic factual claim (one single verifiable fact).
+1. Each claim must be an atomic factual claim (one single verifiable fact). Break sentences with multiple distinct facts (such as location, date, or events) into separate atomic claims.
 2. "original_text_quote" MUST be an EXACT substring from the AI answer text below.
 3. Keep claims in the order they appear.
 
@@ -239,31 +269,36 @@ Respond with a JSON array of objects with keys:
     )
 
     claims = []
-    # If LLM wrapped it in a dict like {"claims": [...]}, unwrap it
     items = raw_data.get("claims", raw_data) if isinstance(raw_data, dict) else raw_data
+    current_cursor = 0
 
     for item in items:
         claim_id = item.get("claim_id", len(claims) + 1)
         claim_text = item.get("claim_text", "").strip()
         quote = item.get("original_text_quote", "").strip()
 
-        # Locate substring in original answer
-        start, end = find_substring_span(ai_answer, quote)
+        # Incremental search starting from current_cursor
+        start, end = find_substring_span_incremental(ai_answer, quote, min_start=current_cursor)
         if start == -1:
             # Fallback: try finding claim_text in ai_answer
-            start, end = find_substring_span(ai_answer, claim_text)
-            if start != -1:
-                quote = ai_answer[start:end]
-            else:
-                start, end = 0, len(ai_answer)
-                quote = ai_answer
+            start, end = find_substring_span_incremental(ai_answer, claim_text, min_start=current_cursor)
+
+        if start != -1:
+            located = True
+            quote = ai_answer[start:end]
+            current_cursor = end  # Advance cursor for next claim
+        else:
+            located = False
+            start = None
+            end = None
 
         claims.append(ExtractedClaim(
             claim_id=claim_id,
             claim_text=claim_text,
             original_text_quote=quote,
             start_char=start,
-            end_char=end
+            end_char=end,
+            located=located
         ))
 
     return claims
@@ -275,7 +310,6 @@ def step_3_judge_claims(claims: List[ExtractedClaim], evidence_map: dict[int, st
     Evaluates each claim against its retrieved evidence text.
     Returns raw judgments from the LLM.
     """
-    # Build prompt with each claim and its specific evidence
     claims_payload = []
     for c in claims:
         claims_payload.append({
@@ -328,7 +362,18 @@ Respond with a JSON array of objects with keys:
     )
 
     items = raw_judgments.get("judgments", raw_judgments) if isinstance(raw_judgments, dict) else raw_judgments
-    return items
+    return items if isinstance(items, list) else []
+
+
+ALLOWED_VERDICTS = {"supported", "contradicted", "insufficient_evidence"}
+ALLOWED_ERROR_TYPES = {
+    "none",
+    "hallucinated_fact",
+    "unsupported_claim",
+    "logical_inconsistency",
+    "unsafe_recommendation"
+}
+ALLOWED_CONFIDENCES = {"high", "medium", "low"}
 
 
 def step_4_verify_judgments(
@@ -344,53 +389,76 @@ def step_4_verify_judgments(
     If the LLM claimed a fact was "supported" based on a hallucinated citation,
     we downgrade the verdict to "insufficient_evidence" and flag it.
     """
-    judgment_map = {j.get("claim_id"): j for j in raw_judgments if isinstance(j, dict)}
+    judgment_map = {}
+    for j in raw_judgments:
+        if isinstance(j, dict) and "claim_id" in j:
+            try:
+                cid = int(j["claim_id"])
+                judgment_map[cid] = j
+            except (ValueError, TypeError):
+                pass
+
     verified_claims: List[ClaimJudgment] = []
 
     for claim in claims:
-        j = judgment_map.get(claim.claim_id, {})
-        verdict = j.get("verdict", "insufficient_evidence")
-        error_type = j.get("error_type", "unsupported_claim")
-        quote = j.get("evidence_quote", "").strip()
-        explanation = j.get("explanation", "No explanation provided.")
-        confidence = j.get("confidence", "medium")
+        cid = int(claim.claim_id)
+        j = judgment_map.get(cid, {})
+
+        raw_verdict = str(j.get("verdict") or "").strip().lower()
+        verdict = raw_verdict if raw_verdict in ALLOWED_VERDICTS else "insufficient_evidence"
+
+        raw_error = str(j.get("error_type") or "").strip().lower()
+        error_type = raw_error if raw_error in ALLOWED_ERROR_TYPES else "unsupported_claim"
+
+        raw_conf = str(j.get("confidence") or "").strip().lower()
+        confidence = raw_conf if raw_conf in ALLOWED_CONFIDENCES else "low"
+
+        quote = str(j.get("evidence_quote") or "").strip()
+        explanation = str(j.get("explanation") or "").strip()
 
         quote_verified = False
         quote_start = None
         quote_end = None
 
         if quote:
-            # Check if quote really exists in source
             start, end = find_substring_span(source_text, quote)
             if start != -1:
                 quote_verified = True
                 quote_start = start
                 quote_end = end
             else:
-                # Quote was hallucinated or altered by the LLM!
                 quote_verified = False
-                if verdict == "supported":
-                    # Downgrade because the cited proof does not exist
-                    verdict = "insufficient_evidence"
-                    error_type = "unsupported_claim"
-                    confidence = "low"
-                    explanation += " [Verification Alert: The cited evidence quote was NOT found verbatim in the source text; downgraded from supported.]"
-                else:
-                    explanation += " [Verification Alert: The cited quote was not found verbatim in the source text.]"
-        else:
-            # Empty quote
-            quote_verified = False
 
-        # Ensure correct error_type for supported claims
+        # Rule 2: A "supported" verdict must have a verified quote.
         if verdict == "supported":
-            error_type = "none"
+            if not quote_verified:
+                verdict = "insufficient_evidence"
+                error_type = "unsupported_claim"
+                confidence = "low"
+                if not quote:
+                    alert = "[Verification Alert: Claim marked supported but no evidence quote was provided; downgraded to insufficient evidence.]"
+                else:
+                    alert = "[Verification Alert: The cited evidence quote was NOT found verbatim in the source text; downgraded from supported.]"
+                explanation = f"{explanation} {alert}".strip() if explanation else alert
+            else:
+                error_type = "none"
+
+        # Rule 3: If "contradicted" has an unverified quote, adjust confidence
+        if verdict == "contradicted" and not quote_verified:
+            confidence = "low"
+            if quote:
+                alert = "[Verification Alert: The cited evidence quote was NOT found verbatim in the source text.]"
+            else:
+                alert = "[Verification Alert: No verbatim evidence quote was provided to substantiate the contradiction.]"
+            explanation = f"{explanation} {alert}".strip() if explanation else alert
 
         verified_claims.append(ClaimJudgment(
-            claim_id=claim.claim_id,
+            claim_id=cid,
             claim_text=claim.claim_text,
             original_text_quote=claim.original_text_quote,
-            start_char=claim.start_char or 0,
-            end_char=claim.end_char or len(claim.original_text_quote),
+            start_char=claim.start_char,
+            end_char=claim.end_char,
+            located=claim.located,
             verdict=verdict,
             error_type=error_type,
             evidence_quote=quote,
@@ -462,6 +530,8 @@ def step_6_calculate_summary(
     """
     Stage 6: Summary & Reliability Scoring.
     Counts verdicts and computes an overall reliability score (0-100).
+    Formula:
+      score = supported% - 15 per contradicted - 20 per unsafe_recommendation - 5 per high-severity reasoning issue (capped at 15)
     """
     total = len(claims)
     if total == 0:
@@ -473,6 +543,13 @@ def step_6_calculate_summary(
             problematic_count=0,
             unverified_quotes_count=0,
             reliability_score=100,
+            score_breakdown={
+                "supported_percentage": 100.0,
+                "contradicted_penalty": 0,
+                "unsafe_recommendation_penalty": 0,
+                "reasoning_penalty": 0,
+                "final_score": 100
+            },
             assessment_text="No factual claims found to audit."
         )
 
@@ -483,17 +560,28 @@ def step_6_calculate_summary(
 
     problematic = contradicted + insufficient
 
-    # Transparent scoring formula:
-    # Supported claims give positive weight: (supported / total) * 100
-    # Contradicted claims penalize heavily (-15 per contradiction)
-    # Severe reasoning flaws penalize (-15)
-    base_score = (supported / total) * 100
-    penalty = (contradicted * 15) + (15 if reasoning.has_reasoning_flaws else 0)
-    score = int(max(0, min(100, round(base_score - penalty))))
+    supported_pct = (supported / total) * 100.0
+    contradicted_penalty = contradicted * 15
+    unsafe_count = sum(1 for c in claims if c.error_type == "unsafe_recommendation")
+    unsafe_penalty = unsafe_count * 20
+
+    high_severity_count = sum(1 for iss in reasoning.issues if iss.severity == "high")
+    reasoning_penalty = min(15, high_severity_count * 5)
+
+    raw_score = supported_pct - contradicted_penalty - unsafe_penalty - reasoning_penalty
+    score = int(max(0, min(100, round(raw_score))))
+
+    score_breakdown = {
+        "supported_percentage": round(supported_pct, 1),
+        "contradicted_penalty": contradicted_penalty,
+        "unsafe_recommendation_penalty": unsafe_penalty,
+        "reasoning_penalty": reasoning_penalty,
+        "final_score": score
+    }
 
     assessment = (
         f"{problematic} of {total} claims have problems "
-        f"({contradicted} contradicted, {insufficient} unverified). "
+        f"({contradicted} contradicted, {insufficient} insufficient evidence). "
         f"Overall reliability score: {score}/100."
     )
 
@@ -505,6 +593,7 @@ def step_6_calculate_summary(
         problematic_count=problematic,
         unverified_quotes_count=unverified,
         reliability_score=score,
+        score_breakdown=score_breakdown,
         assessment_text=assessment
     )
 
@@ -516,6 +605,7 @@ def step_6_calculate_summary(
 def run_audit(source_text: str, ai_answer: str) -> AuditResult:
     """
     Runs the full Second Opinion audit pipeline on the provided source and answer.
+    Step 3 (Claim Judging) and Step 5 (Reasoning Check) run concurrently to reduce latency.
     """
     # 1. Claim extraction
     claims = step_1_extract_claims(ai_answer)
@@ -523,14 +613,16 @@ def run_audit(source_text: str, ai_answer: str) -> AuditResult:
     # 2. Evidence retrieval
     evidence_map = retrieve_evidence_for_claims(source_text, claims)
 
-    # 3. Claim judging
-    raw_judgments = step_3_judge_claims(claims, evidence_map)
+    # 3 & 5. Parallel execution of Step 3 (Judging) and Step 5 (Reasoning check)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_judgments = executor.submit(step_3_judge_claims, claims, evidence_map)
+        future_reasoning = executor.submit(step_5_reasoning_check, source_text, ai_answer)
+
+        raw_judgments = future_judgments.result()
+        reasoning = future_reasoning.result()
 
     # 4. Programmatic verification (verbatim quote validation)
     verified_claims = step_4_verify_judgments(claims, raw_judgments, source_text)
-
-    # 5. Reasoning check
-    reasoning = step_5_reasoning_check(source_text, ai_answer)
 
     # 6. Summary & scoring
     summary = step_6_calculate_summary(verified_claims, reasoning)
@@ -549,13 +641,10 @@ def run_audit(source_text: str, ai_answer: str) -> AuditResult:
 # ==============================================================================
 
 if __name__ == "__main__":
-    import json
-
     print("=" * 70)
     print(" SECOND OPINION: Running Pipeline Demo")
     print("=" * 70)
 
-    # Sample source article: Mars Rover Mission Brief
     sample_source = (
         "The Curiosity rover landed on Mars in Gale Crater on August 6, 2012. "
         "Its primary mission was to determine whether Mars could have supported "
@@ -564,10 +653,6 @@ if __name__ == "__main__":
         "it confirmed evidence of past liquid water in ancient lake beds."
     )
 
-    # Sample AI answer containing:
-    # 1. Supported claim: Landed in August 2012 in Gale Crater
-    # 2. Contradicted claim (hallucination): Powered by high-efficiency solar panels
-    # 3. Unsupported / unsafe claim: Astronauts can safely drink water found by Curiosity
     sample_answer = (
         "Curiosity successfully touched down in Gale Crater in August 2012. "
         "The rover is powered exclusively by high-efficiency solar panels. "
@@ -587,9 +672,10 @@ if __name__ == "__main__":
     print(" AUDIT RESULTS")
     print("=" * 70)
 
-    print(f"\n[Summary] {result.summary.assessment_text}")
-    print(f"[Score]   {result.summary.reliability_score}/100")
-    print(f"[Claims]  Total: {result.summary.total_claims} | "
+    print(f"\n[Summary]   {result.summary.assessment_text}")
+    print(f"[Score]     {result.summary.reliability_score}/100")
+    print(f"[Breakdown] {result.summary.score_breakdown}")
+    print(f"[Claims]    Total: {result.summary.total_claims} | "
           f"Supported: {result.summary.supported_count} | "
           f"Contradicted: {result.summary.contradicted_count} | "
           f"Insufficient Evidence: {result.summary.insufficient_evidence_count}")

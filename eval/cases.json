@@ -1,0 +1,246 @@
+[
+  {
+    "id": "wrong_fact_01",
+    "category": "wrong_fact",
+    "source": "The speed of light in a vacuum is approximately 299,792 kilometers per second. Albert Einstein published his theory of special relativity in 1905, which established that nothing can travel faster than light. Light takes about 8 minutes and 20 seconds to travel from the Sun to Earth.",
+    "answer": "The speed of light in a vacuum is approximately 199,792 kilometers per second. Einstein published his theory of special relativity in 1905. Light takes about 8 minutes and 20 seconds to reach Earth from the Sun.",
+    "planted_errors": [
+      {
+        "text": "199,792 kilometers per second",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "hallucinated_fact"
+      }
+    ],
+    "clean_spans": [
+      "Einstein published his theory of special relativity in 1905",
+      "Light takes about 8 minutes and 20 seconds to reach Earth from the Sun"
+    ]
+  },
+  {
+    "id": "wrong_fact_02",
+    "category": "wrong_fact",
+    "source": "The Great Wall of China was built over many centuries, with the most well-known sections constructed during the Ming Dynasty (1368-1644). The wall stretches approximately 21,196 kilometers in total. It was primarily built to protect against invasions from northern nomadic groups.",
+    "answer": "The most well-known sections of the Great Wall were constructed during the Tang Dynasty. The wall stretches approximately 21,196 kilometers in total. It was primarily built to protect against invasions from northern nomadic groups.",
+    "planted_errors": [
+      {
+        "text": "Tang Dynasty",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "hallucinated_fact"
+      }
+    ],
+    "clean_spans": [
+      "stretches approximately 21,196 kilometers in total",
+      "primarily built to protect against invasions from northern nomadic groups"
+    ]
+  },
+  {
+    "id": "wrong_fact_03",
+    "category": "wrong_fact",
+    "source": "Penicillin was discovered by Alexander Fleming in 1928 at St Mary's Hospital in London. Fleming noticed that a mold called Penicillium notatum had contaminated a petri dish and was killing surrounding bacteria. The discovery earned Fleming a share of the 1945 Nobel Prize in Physiology or Medicine.",
+    "answer": "Penicillin was discovered by Alexander Fleming in 1932 at St Mary's Hospital in London. He observed that a mold called Penicillium notatum was killing surrounding bacteria. The discovery earned Fleming a share of the 1945 Nobel Prize.",
+    "planted_errors": [
+      {
+        "text": "in 1932",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "hallucinated_fact"
+      }
+    ],
+    "clean_spans": [
+      "at St Mary's Hospital in London",
+      "a mold called Penicillium notatum was killing surrounding bacteria",
+      "earned Fleming a share of the 1945 Nobel Prize"
+    ]
+  },
+  {
+    "id": "wrong_fact_04",
+    "category": "wrong_fact",
+    "source": "The human body contains approximately 206 bones in adulthood. Babies are born with about 270 bones, many of which fuse together as they grow. The smallest bone in the human body is the stapes, located in the middle ear, measuring about 3 millimeters.",
+    "answer": "The human body contains approximately 206 bones in adulthood. Babies are born with about 270 bones. The smallest bone in the human body is the stapes, located in the inner ear, measuring about 3 millimeters.",
+    "planted_errors": [
+      {
+        "text": "inner ear",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "hallucinated_fact"
+      }
+    ],
+    "clean_spans": [
+      "approximately 206 bones in adulthood",
+      "Babies are born with about 270 bones",
+      "measuring about 3 millimeters"
+    ]
+  },
+  {
+    "id": "wrong_fact_05",
+    "category": "wrong_fact",
+    "source": "The Amazon River is the largest river in the world by volume of water flow. It is approximately 6,400 kilometers long. The Amazon basin covers about 7 million square kilometers, spanning eight countries and one overseas territory. The river discharges roughly 209,000 cubic meters of water per second into the Atlantic Ocean.",
+    "answer": "The Amazon River is the largest river in the world by volume. It is approximately 6,400 kilometers long. The Amazon basin covers about 7 million square kilometers, spanning twelve countries. It discharges roughly 209,000 cubic meters per second into the Atlantic Ocean.",
+    "planted_errors": [
+      {
+        "text": "spanning twelve countries",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "hallucinated_fact"
+      }
+    ],
+    "clean_spans": [
+      "largest river in the world by volume",
+      "approximately 6,400 kilometers long",
+      "covers about 7 million square kilometers"
+    ]
+  },
+  {
+    "id": "unsupported_claim_01",
+    "category": "unsupported_claim",
+    "source": "CRISPR-Cas9 is a gene-editing technology discovered through the study of bacterial immune systems. It allows scientists to modify DNA sequences with high precision. Clinical trials are underway for sickle cell disease and certain cancers.",
+    "answer": "CRISPR-Cas9 allows scientists to modify DNA sequences with high precision. Clinical trials are underway for sickle cell disease and certain cancers. CRISPR has also been approved by the FDA for treating hereditary blindness.",
+    "planted_errors": [
+      {
+        "text": "CRISPR has also been approved by the FDA for treating hereditary blindness",
+        "expected_verdict": "insufficient_evidence",
+        "expected_error_type": "unsupported_claim"
+      }
+    ],
+    "clean_spans": [
+      "modify DNA sequences with high precision",
+      "Clinical trials are underway for sickle cell disease and certain cancers"
+    ]
+  },
+  {
+    "id": "unsupported_claim_02",
+    "category": "unsupported_claim",
+    "source": "The Pythagorean theorem states that in a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides. It is one of the fundamental results in Euclidean geometry. The theorem has been proven in hundreds of different ways over the centuries.",
+    "answer": "The Pythagorean theorem states that in a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides. The theorem was first proven by Pythagoras himself around 500 BCE. It has been proven in hundreds of different ways over the centuries.",
+    "planted_errors": [
+      {
+        "text": "first proven by Pythagoras himself around 500 BCE",
+        "expected_verdict": "insufficient_evidence",
+        "expected_error_type": "unsupported_claim"
+      }
+    ],
+    "clean_spans": [
+      "the square of the hypotenuse equals the sum of the squares of the other two sides",
+      "proven in hundreds of different ways over the centuries"
+    ]
+  },
+  {
+    "id": "unsupported_claim_03",
+    "category": "unsupported_claim",
+    "source": "The Fourth Amendment to the United States Constitution protects citizens against unreasonable searches and seizures. It requires law enforcement to obtain a warrant supported by probable cause before conducting a search. The amendment was ratified in 1791 as part of the Bill of Rights.",
+    "answer": "The Fourth Amendment protects citizens against unreasonable searches and seizures. It requires law enforcement to obtain a warrant supported by probable cause. The amendment was ratified in 1791. In 2018 the Supreme Court extended these protections to cell phone location data in Carpenter v. United States.",
+    "planted_errors": [
+      {
+        "text": "In 2018 the Supreme Court extended these protections to cell phone location data in Carpenter v. United States",
+        "expected_verdict": "insufficient_evidence",
+        "expected_error_type": "unsupported_claim"
+      }
+    ],
+    "clean_spans": [
+      "protects citizens against unreasonable searches and seizures",
+      "obtain a warrant supported by probable cause",
+      "ratified in 1791"
+    ]
+  },
+  {
+    "id": "unsafe_rec_01",
+    "category": "unsafe_recommendation",
+    "source": "Acetaminophen (paracetamol) is a widely used over-the-counter pain reliever and fever reducer. The maximum recommended daily dose for adults is 4,000 milligrams. Exceeding this dose can cause severe liver damage and potentially fatal liver failure. Patients with liver conditions should consult a physician before taking acetaminophen.",
+    "answer": "Acetaminophen is a widely used pain reliever. Since the maximum daily dose is 4,000 milligrams, taking 6,000 milligrams is safe if you space it out over the day. Exceeding the recommended dose can cause liver damage.",
+    "planted_errors": [
+      {
+        "text": "taking 6,000 milligrams is safe if you space it out over the day",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "unsafe_recommendation"
+      }
+    ],
+    "clean_spans": [
+      "Acetaminophen is a widely used pain reliever",
+      "Exceeding the recommended dose can cause liver damage"
+    ]
+  },
+  {
+    "id": "unsafe_rec_02",
+    "category": "unsafe_recommendation",
+    "source": "Lithium-ion batteries store energy through the movement of lithium ions between electrodes. They should be stored at moderate temperatures between 20 and 25 degrees Celsius. Exposure to temperatures above 60 degrees Celsius can cause thermal runaway, leading to fires or explosions. Damaged batteries should be disposed of at certified recycling centers.",
+    "answer": "Lithium-ion batteries store energy through the movement of lithium ions. They should be stored at moderate temperatures. If a lithium-ion battery is swollen or damaged, you can safely puncture it to release the pressure before throwing it in the regular trash. Damaged batteries pose a fire risk.",
+    "planted_errors": [
+      {
+        "text": "you can safely puncture it to release the pressure before throwing it in the regular trash",
+        "expected_verdict": "contradicted",
+        "expected_error_type": "unsafe_recommendation"
+      }
+    ],
+    "clean_spans": [
+      "store energy through the movement of lithium ions",
+      "stored at moderate temperatures"
+    ]
+  },
+  {
+    "id": "logical_leap_01",
+    "category": "logical_leap",
+    "source": "A 2023 study found that participants who drank three cups of green tea daily showed a 12% reduction in LDL cholesterol over 12 weeks compared to a control group. The study enrolled 200 adults aged 40 to 65 with mildly elevated cholesterol. Researchers noted that further studies are needed to confirm the findings.",
+    "answer": "A 2023 study found that drinking three cups of green tea daily reduced LDL cholesterol by 12% over 12 weeks. The study enrolled 200 adults aged 40 to 65. Therefore, green tea is a proven cure for heart disease and should replace statin medications entirely.",
+    "planted_errors": [
+      {
+        "text": "green tea is a proven cure for heart disease and should replace statin medications entirely",
+        "expected_verdict": "insufficient_evidence",
+        "expected_error_type": "logical_inconsistency"
+      }
+    ],
+    "clean_spans": [
+      "drinking three cups of green tea daily reduced LDL cholesterol by 12% over 12 weeks",
+      "study enrolled 200 adults aged 40 to 65"
+    ]
+  },
+  {
+    "id": "logical_leap_02",
+    "category": "logical_leap",
+    "source": "A survey of 500 software engineers found that 68% preferred using TypeScript over plain JavaScript for large-scale projects. Respondents cited better tooling and type safety as the main advantages. The survey was conducted online and participation was voluntary.",
+    "answer": "A survey found that 68% of software engineers preferred TypeScript over JavaScript for large-scale projects, citing better tooling and type safety. Since most engineers prefer TypeScript, companies that continue to use JavaScript will inevitably go bankrupt within five years.",
+    "planted_errors": [
+      {
+        "text": "companies that continue to use JavaScript will inevitably go bankrupt within five years",
+        "expected_verdict": "insufficient_evidence",
+        "expected_error_type": "logical_inconsistency"
+      }
+    ],
+    "clean_spans": [
+      "68% of software engineers preferred TypeScript over JavaScript for large-scale projects",
+      "citing better tooling and type safety"
+    ]
+  },
+  {
+    "id": "correct_01",
+    "category": "correct",
+    "source": "Photosynthesis is the process by which green plants convert sunlight, water, and carbon dioxide into glucose and oxygen. Chlorophyll, the green pigment in plant cells, absorbs light energy to power this reaction. Photosynthesis occurs mainly in the leaves of plants.",
+    "answer": "Photosynthesis is the process by which green plants convert sunlight, water, and carbon dioxide into glucose and oxygen. Chlorophyll absorbs light energy to power this reaction. The process occurs mainly in the leaves.",
+    "planted_errors": [],
+    "clean_spans": [
+      "green plants convert sunlight, water, and carbon dioxide into glucose and oxygen",
+      "Chlorophyll absorbs light energy to power this reaction",
+      "occurs mainly in the leaves"
+    ]
+  },
+  {
+    "id": "correct_02",
+    "category": "correct",
+    "source": "The Treaty of Versailles was signed on June 28, 1919, officially ending World War I. It imposed heavy reparations on Germany and required significant territorial concessions. The treaty was negotiated at the Paris Peace Conference and signed in the Hall of Mirrors at the Palace of Versailles.",
+    "answer": "The Treaty of Versailles was signed on June 28, 1919, ending World War I. It imposed heavy reparations on Germany. The treaty was signed in the Hall of Mirrors at the Palace of Versailles.",
+    "planted_errors": [],
+    "clean_spans": [
+      "signed on June 28, 1919, ending World War I",
+      "imposed heavy reparations on Germany",
+      "signed in the Hall of Mirrors at the Palace of Versailles"
+    ]
+  },
+  {
+    "id": "correct_03",
+    "category": "correct",
+    "source": "TCP/IP is the fundamental communication protocol suite of the Internet. TCP ensures reliable, ordered delivery of data between applications, while IP handles addressing and routing of packets across networks. The protocol was developed by Vint Cerf and Bob Kahn in the 1970s.",
+    "answer": "TCP/IP is the fundamental communication protocol suite of the Internet. TCP ensures reliable, ordered delivery of data, while IP handles addressing and routing. The protocol was developed by Vint Cerf and Bob Kahn in the 1970s.",
+    "planted_errors": [],
+    "clean_spans": [
+      "fundamental communication protocol suite of the Internet",
+      "TCP ensures reliable, ordered delivery of data",
+      "developed by Vint Cerf and Bob Kahn in the 1970s"
+    ]
+  }
+]

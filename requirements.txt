@@ -1,14 +1,21 @@
-# Second Opinion - Dependencies
+# Second Opinion - Production & Testing Dependencies
+# Pinned versions for reproducibility
 
 # Google Gemini API official SDK
-google-genai>=0.1.1
+google-genai>=2.29.0,<3.0.0
 
 # Environment variable management (.env)
-python-dotenv>=1.0.1
+python-dotenv>=1.2.0,<2.0.0
 
 # Data parsing & structured JSON validation
-pydantic>=2.10.0
+pydantic>=2.10.0,<3.0.0
 
 # Backend Web API framework & ASGI server
-fastapi>=0.115.0
-uvicorn>=0.34.0
+fastapi>=0.115.0,<1.0.0
+uvicorn>=0.34.0,<1.0.0
+
+# HTTP client for testing & API requests
+httpx>=0.28.0,<1.0.0
+
+# Testing framework
+pytest>=8.0.0,<9.0.0

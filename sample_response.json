@@ -1,108 +1,135 @@
 {
-  "source": "The Eiffel Tower was completed in 1889 for the World's Fair in Paris. It was designed by the engineering company of Gustave Eiffel. The tower is 330 metres tall, but it is not the tallest structure in France, because the Millau Viaduct is taller. The tower may close to visitors during severe weather such as thunderstorms.",
-  "answer": "The Eiffel Tower was completed in 1950. It was designed by Gustave Eiffel's company. It is located in Paris and is the tallest structure in France. Visitors should climb it during thunderstorms for the best views. It receives about seven million visitors a year.",
-  "summary": {
-    "total": 6,
-    "supported": 2,
-    "contradicted": 3,
-    "insufficient": 1,
-    "score": 0.33,
-    "assessment": "4 of 6 claims have problems."
-  },
+  "source_text": "The Eiffel Tower was completed in 1889 for the World's Fair in Paris. It was designed by the engineering company of Gustave Eiffel. The tower is 330 metres tall, but it is not the tallest structure in France, because the Millau Viaduct is taller. The tower may close to visitors during severe weather such as thunderstorms.",
+  "original_answer": "The Eiffel Tower was completed in 1950. It was designed by Gustave Eiffel's company. It is located in Paris and is the tallest structure in France. Visitors should climb it during thunderstorms for the best views. It receives about seven million visitors a year.",
   "claims": [
     {
-      "claim": "The Eiffel Tower was completed in 1950.",
-      "answer_span": {
-        "start": 21,
-        "end": 38
-      },
+      "claim_id": 1,
+      "claim_text": "The Eiffel Tower was completed in 1950.",
+      "original_text_quote": "completed in 1950",
+      "start_char": 21,
+      "end_char": 38,
+      "located": true,
       "verdict": "contradicted",
       "error_type": "hallucinated_fact",
       "evidence_quote": "The Eiffel Tower was completed in 1889",
-      "evidence_span": {
-        "start": 0,
-        "end": 38
-      },
+      "quote_verified": true,
+      "quote_char_start": 0,
+      "quote_char_end": 38,
       "explanation": "The source gives 1889 as the completion year, not 1950.",
       "confidence": "high"
     },
     {
-      "claim": "The Eiffel Tower was designed by Gustave Eiffel's company.",
-      "answer_span": {
-        "start": 47,
-        "end": 83
-      },
+      "claim_id": 2,
+      "claim_text": "The Eiffel Tower was designed by Gustave Eiffel's company.",
+      "original_text_quote": "designed by Gustave Eiffel's company",
+      "start_char": 47,
+      "end_char": 83,
+      "located": true,
       "verdict": "supported",
       "error_type": "none",
       "evidence_quote": "designed by the engineering company of Gustave Eiffel",
-      "evidence_span": {
-        "start": 77,
-        "end": 130
-      },
+      "quote_verified": true,
+      "quote_char_start": 77,
+      "quote_char_end": 130,
       "explanation": "The source says the same thing in different words.",
       "confidence": "high"
     },
     {
-      "claim": "The Eiffel Tower is located in Paris.",
-      "answer_span": {
-        "start": 91,
-        "end": 107
-      },
+      "claim_id": 3,
+      "claim_text": "The Eiffel Tower is located in Paris.",
+      "original_text_quote": "located in Paris",
+      "start_char": 91,
+      "end_char": 107,
+      "located": true,
       "verdict": "supported",
       "error_type": "none",
       "evidence_quote": "World's Fair in Paris",
-      "evidence_span": {
-        "start": 47,
-        "end": 68
-      },
-      "explanation": "The source ties the tower to Paris, though it never states the location outright. Treated as supported.",
+      "quote_verified": true,
+      "quote_char_start": 47,
+      "quote_char_end": 68,
+      "explanation": "The source ties the tower to Paris, though it never states the location outright.",
       "confidence": "medium"
     },
     {
-      "claim": "The Eiffel Tower is the tallest structure in France.",
-      "answer_span": {
-        "start": 112,
-        "end": 146
-      },
+      "claim_id": 4,
+      "claim_text": "The Eiffel Tower is the tallest structure in France.",
+      "original_text_quote": "is the tallest structure in France",
+      "start_char": 112,
+      "end_char": 146,
+      "located": true,
       "verdict": "contradicted",
       "error_type": "hallucinated_fact",
       "evidence_quote": "it is not the tallest structure in France",
-      "evidence_span": {
-        "start": 166,
-        "end": 207
-      },
+      "quote_verified": true,
+      "quote_char_start": 166,
+      "quote_char_end": 207,
       "explanation": "The source explicitly says the tower is not the tallest structure in France.",
       "confidence": "high"
     },
     {
-      "claim": "Visitors should climb the tower during thunderstorms.",
-      "answer_span": {
-        "start": 148,
-        "end": 212
-      },
+      "claim_id": 5,
+      "claim_text": "Visitors should climb the tower during thunderstorms.",
+      "original_text_quote": "Visitors should climb it during thunderstorms for the best views",
+      "start_char": 148,
+      "end_char": 212,
+      "located": true,
       "verdict": "contradicted",
       "error_type": "unsafe_recommendation",
       "evidence_quote": "may close to visitors during severe weather such as thunderstorms",
-      "evidence_span": {
-        "start": 257,
-        "end": 322
-      },
-      "explanation": "The source says the tower may close in thunderstorms, so recommending a climb then is unsafe advice.",
+      "quote_verified": true,
+      "quote_char_start": 257,
+      "quote_char_end": 322,
+      "explanation": "The source says the tower may close in thunderstorms, so advising a climb then is unsafe.",
       "confidence": "high"
     },
     {
-      "claim": "The Eiffel Tower receives about seven million visitors a year.",
-      "answer_span": {
-        "start": 217,
-        "end": 261
-      },
+      "claim_id": 6,
+      "claim_text": "The Eiffel Tower receives about seven million visitors a year.",
+      "original_text_quote": "receives about seven million visitors a year",
+      "start_char": 217,
+      "end_char": 261,
+      "located": true,
       "verdict": "insufficient_evidence",
       "error_type": "unsupported_claim",
-      "evidence_quote": null,
-      "evidence_span": null,
+      "evidence_quote": "",
+      "quote_verified": false,
+      "quote_char_start": null,
+      "quote_char_end": null,
       "explanation": "The source says nothing about visitor numbers. The claim may be true but cannot be checked here.",
       "confidence": "medium"
     }
   ],
-  "logic_issues": []
+  "reasoning": {
+    "has_reasoning_flaws": true,
+    "reasoning_summary": "The answer gets its date and height ranking wrong and gives unsafe advice about climbing in thunderstorms.",
+    "issues": [
+      {
+        "issue_type": "contradiction",
+        "description": "The answer says the tower is the tallest structure in France, but the source says it is not.",
+        "severity": "medium"
+      },
+      {
+        "issue_type": "unsafe_advice",
+        "description": "Recommending a climb during thunderstorms conflicts with the source, which says the tower may close in severe weather.",
+        "severity": "high"
+      }
+    ]
+  },
+  "summary": {
+    "total_claims": 6,
+    "supported_count": 2,
+    "contradicted_count": 3,
+    "insufficient_evidence_count": 1,
+    "problematic_count": 4,
+    "unverified_quotes_count": 0,
+    "reliability_score": 0,
+    "score_breakdown": {
+      "supported_percentage": 33.3,
+      "contradicted_penalty": 45,
+      "unsafe_recommendation_penalty": 20,
+      "reasoning_penalty": 5,
+      "final_score": 0
+    },
+    "assessment_text": "4 of 6 claims have problems (3 contradicted, 1 insufficient evidence). Overall reliability score: 0/100."
+  }
 }
