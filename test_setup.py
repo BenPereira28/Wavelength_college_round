@@ -32,7 +32,7 @@ def main():
     # 3. Check .env loading
     load_dotenv()
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-flash-latest").strip()
 
     print("-" * 60)
     print(f"Target Gemini Model: {model}")

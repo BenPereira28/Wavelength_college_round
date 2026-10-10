@@ -66,13 +66,15 @@ def clean_json_text(raw_text: str) -> str:
 def call_llm_json(
     prompt: str,
     system_instruction: Optional[str] = None,
-    retries: int = 2,
+    retries: int = 3,
     temperature: float = 0.1
 ) -> Any:
     """
     Sends a prompt to the LLM and guarantees a parsed JSON response (dict or list).
     
     If the response is malformed or an error occurs, it will retry up to `retries` times.
+    Waits 5, 15, then 30 seconds if a rate limit / quota (429) error occurs,
+    and 1 second for JSON decode or parsing errors.
     
     Args:
         prompt: The user query or task instructions.
@@ -111,10 +113,14 @@ def call_llm_json(
         except (json.JSONDecodeError, Exception) as e:
             last_error = e
             if attempt < retries:
-                # Brief backoff before retry
-                time.sleep(1.0)
-                # Append a reminder to return valid JSON on retry
-                prompt += "\n\nCRITICAL: Please ensure your output is strictly valid, parseable JSON."
+                err_text = str(e).lower()
+                if "429" in err_text or "quota" in err_text:
+                    quota_delays = [5, 15, 30]
+                    delay = quota_delays[attempt] if attempt < len(quota_delays) else 30
+                    time.sleep(delay)
+                else:
+                    time.sleep(1.0)
+                    prompt += "\n\nCRITICAL: Please ensure your output is strictly valid, parseable JSON."
 
     raise RuntimeError(
         f"Failed to obtain valid JSON from LLM after {retries + 1} attempts. Last error: {last_error}"

@@ -39,6 +39,7 @@ class ExtractedClaim(BaseModel):
     )
     start_char: Optional[int] = None
     end_char: Optional[int] = None
+    located: bool = True
 
 
 class ClaimJudgment(BaseModel):
@@ -46,8 +47,9 @@ class ClaimJudgment(BaseModel):
     claim_id: int
     claim_text: str
     original_text_quote: str
-    start_char: int
-    end_char: int
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    located: bool = True
     verdict: Literal["supported", "contradicted", "insufficient_evidence"]
     error_type: Literal[
         "none",
@@ -60,7 +62,7 @@ class ClaimJudgment(BaseModel):
     quote_verified: bool = False
     quote_char_start: Optional[int] = None
     quote_char_end: Optional[int] = None
-    explanation: str
+    explanation: str = ""
     confidence: Literal["high", "medium", "low"]
 
 
@@ -87,6 +89,7 @@ class AuditSummary(BaseModel):
     problematic_count: int
     unverified_quotes_count: int
     reliability_score: int  # 0 to 100
+    score_breakdown: dict = Field(default_factory=dict)
     assessment_text: str
 
 
@@ -252,18 +255,22 @@ Respond with a JSON array of objects with keys:
         if start == -1:
             # Fallback: try finding claim_text in ai_answer
             start, end = find_substring_span(ai_answer, claim_text)
-            if start != -1:
-                quote = ai_answer[start:end]
-            else:
-                start, end = 0, len(ai_answer)
-                quote = ai_answer
+
+        if start != -1:
+            located = True
+            quote = ai_answer[start:end]
+        else:
+            located = False
+            start = None
+            end = None
 
         claims.append(ExtractedClaim(
             claim_id=claim_id,
             claim_text=claim_text,
             original_text_quote=quote,
             start_char=start,
-            end_char=end
+            end_char=end,
+            located=located
         ))
 
     return claims
@@ -331,6 +338,17 @@ Respond with a JSON array of objects with keys:
     return items
 
 
+ALLOWED_VERDICTS = {"supported", "contradicted", "insufficient_evidence"}
+ALLOWED_ERROR_TYPES = {
+    "none",
+    "hallucinated_fact",
+    "unsupported_claim",
+    "logical_inconsistency",
+    "unsafe_recommendation"
+}
+ALLOWED_CONFIDENCES = {"high", "medium", "low"}
+
+
 def step_4_verify_judgments(
     claims: List[ExtractedClaim],
     raw_judgments: List[dict],
@@ -344,53 +362,79 @@ def step_4_verify_judgments(
     If the LLM claimed a fact was "supported" based on a hallucinated citation,
     we downgrade the verdict to "insufficient_evidence" and flag it.
     """
-    judgment_map = {j.get("claim_id"): j for j in raw_judgments if isinstance(j, dict)}
+    judgment_map = {}
+    for j in raw_judgments:
+        if isinstance(j, dict) and "claim_id" in j:
+            try:
+                cid = int(j["claim_id"])
+                judgment_map[cid] = j
+            except (ValueError, TypeError):
+                pass
+
     verified_claims: List[ClaimJudgment] = []
 
     for claim in claims:
-        j = judgment_map.get(claim.claim_id, {})
-        verdict = j.get("verdict", "insufficient_evidence")
-        error_type = j.get("error_type", "unsupported_claim")
-        quote = j.get("evidence_quote", "").strip()
-        explanation = j.get("explanation", "No explanation provided.")
-        confidence = j.get("confidence", "medium")
+        cid = int(claim.claim_id)
+        j = judgment_map.get(cid, {})
+
+        # Coerce and validate verdict, error_type, confidence with fallbacks
+        raw_verdict = str(j.get("verdict") or "").strip().lower()
+        verdict = raw_verdict if raw_verdict in ALLOWED_VERDICTS else "insufficient_evidence"
+
+        raw_error = str(j.get("error_type") or "").strip().lower()
+        error_type = raw_error if raw_error in ALLOWED_ERROR_TYPES else "unsupported_claim"
+
+        raw_conf = str(j.get("confidence") or "").strip().lower()
+        confidence = raw_conf if raw_conf in ALLOWED_CONFIDENCES else "low"
+
+        # Use `or ""` so null never raises ValidationError
+        quote = str(j.get("evidence_quote") or "").strip()
+        explanation = str(j.get("explanation") or "").strip()
 
         quote_verified = False
         quote_start = None
         quote_end = None
 
         if quote:
-            # Check if quote really exists in source
             start, end = find_substring_span(source_text, quote)
             if start != -1:
                 quote_verified = True
                 quote_start = start
                 quote_end = end
             else:
-                # Quote was hallucinated or altered by the LLM!
                 quote_verified = False
-                if verdict == "supported":
-                    # Downgrade because the cited proof does not exist
-                    verdict = "insufficient_evidence"
-                    error_type = "unsupported_claim"
-                    confidence = "low"
-                    explanation += " [Verification Alert: The cited evidence quote was NOT found verbatim in the source text; downgraded from supported.]"
-                else:
-                    explanation += " [Verification Alert: The cited quote was not found verbatim in the source text.]"
-        else:
-            # Empty quote
-            quote_verified = False
 
-        # Ensure correct error_type for supported claims
+        # Rule 2: A "supported" verdict must have a verified quote.
+        # If quote is empty or not found, downgrade to insufficient_evidence.
         if verdict == "supported":
-            error_type = "none"
+            if not quote_verified:
+                verdict = "insufficient_evidence"
+                error_type = "unsupported_claim"
+                confidence = "low"
+                if not quote:
+                    alert = "[Verification Alert: Claim marked supported but no evidence quote was provided; downgraded to insufficient evidence.]"
+                else:
+                    alert = "[Verification Alert: The cited evidence quote was NOT found verbatim in the source text; downgraded from supported.]"
+                explanation = f"{explanation} {alert}".strip() if explanation else alert
+            else:
+                error_type = "none"
+
+        # Rule 3: If "contradicted" has an unverified quote, set confidence to "low" and keep alert in explanation.
+        if verdict == "contradicted" and not quote_verified:
+            confidence = "low"
+            if quote:
+                alert = "[Verification Alert: The cited evidence quote was NOT found verbatim in the source text.]"
+            else:
+                alert = "[Verification Alert: No verbatim evidence quote was provided to substantiate the contradiction.]"
+            explanation = f"{explanation} {alert}".strip() if explanation else alert
 
         verified_claims.append(ClaimJudgment(
-            claim_id=claim.claim_id,
+            claim_id=cid,
             claim_text=claim.claim_text,
             original_text_quote=claim.original_text_quote,
-            start_char=claim.start_char or 0,
-            end_char=claim.end_char or len(claim.original_text_quote),
+            start_char=claim.start_char,
+            end_char=claim.end_char,
+            located=claim.located,
             verdict=verdict,
             error_type=error_type,
             evidence_quote=quote,
@@ -462,6 +506,8 @@ def step_6_calculate_summary(
     """
     Stage 6: Summary & Reliability Scoring.
     Counts verdicts and computes an overall reliability score (0-100).
+    Formula:
+      score = supported% - 15 per contradicted - 20 per unsafe_recommendation - 5 per high-severity reasoning issue (capped at 15)
     """
     total = len(claims)
     if total == 0:
@@ -473,6 +519,13 @@ def step_6_calculate_summary(
             problematic_count=0,
             unverified_quotes_count=0,
             reliability_score=100,
+            score_breakdown={
+                "supported_percentage": 100.0,
+                "contradicted_penalty": 0,
+                "unsafe_recommendation_penalty": 0,
+                "reasoning_penalty": 0,
+                "final_score": 100
+            },
             assessment_text="No factual claims found to audit."
         )
 
@@ -483,17 +536,35 @@ def step_6_calculate_summary(
 
     problematic = contradicted + insufficient
 
-    # Transparent scoring formula:
-    # Supported claims give positive weight: (supported / total) * 100
-    # Contradicted claims penalize heavily (-15 per contradiction)
-    # Severe reasoning flaws penalize (-15)
-    base_score = (supported / total) * 100
-    penalty = (contradicted * 15) + (15 if reasoning.has_reasoning_flaws else 0)
-    score = int(max(0, min(100, round(base_score - penalty))))
+    # 1. supported%
+    supported_pct = (supported / total) * 100.0
 
+    # 2. minus 15 per contradicted claim
+    contradicted_penalty = contradicted * 15
+
+    # 3. minus 20 per claim with error_type unsafe_recommendation (counted once even if also contradicted)
+    unsafe_count = sum(1 for c in claims if c.error_type == "unsafe_recommendation")
+    unsafe_penalty = unsafe_count * 20
+
+    # 4. minus 5 per high-severity reasoning issue (capped at 15)
+    high_severity_count = sum(1 for iss in reasoning.issues if iss.severity == "high")
+    reasoning_penalty = min(15, high_severity_count * 5)
+
+    raw_score = supported_pct - contradicted_penalty - unsafe_penalty - reasoning_penalty
+    score = int(max(0, min(100, round(raw_score))))
+
+    score_breakdown = {
+        "supported_percentage": round(supported_pct, 1),
+        "contradicted_penalty": contradicted_penalty,
+        "unsafe_recommendation_penalty": unsafe_penalty,
+        "reasoning_penalty": reasoning_penalty,
+        "final_score": score
+    }
+
+    # Assessment text renaming 'unverified' to 'insufficient evidence'
     assessment = (
         f"{problematic} of {total} claims have problems "
-        f"({contradicted} contradicted, {insufficient} unverified). "
+        f"({contradicted} contradicted, {insufficient} insufficient evidence). "
         f"Overall reliability score: {score}/100."
     )
 
@@ -505,6 +576,7 @@ def step_6_calculate_summary(
         problematic_count=problematic,
         unverified_quotes_count=unverified,
         reliability_score=score,
+        score_breakdown=score_breakdown,
         assessment_text=assessment
     )
 
@@ -587,9 +659,10 @@ if __name__ == "__main__":
     print(" AUDIT RESULTS")
     print("=" * 70)
 
-    print(f"\n[Summary] {result.summary.assessment_text}")
-    print(f"[Score]   {result.summary.reliability_score}/100")
-    print(f"[Claims]  Total: {result.summary.total_claims} | "
+    print(f"\n[Summary]   {result.summary.assessment_text}")
+    print(f"[Score]     {result.summary.reliability_score}/100")
+    print(f"[Breakdown] {result.summary.score_breakdown}")
+    print(f"[Claims]    Total: {result.summary.total_claims} | "
           f"Supported: {result.summary.supported_count} | "
           f"Contradicted: {result.summary.contradicted_count} | "
           f"Insufficient Evidence: {result.summary.insufficient_evidence_count}")
