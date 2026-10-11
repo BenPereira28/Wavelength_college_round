@@ -299,6 +299,7 @@ def call_llm_json(
         backoff_delays = [2, 5, 12, 30]
         server_error_attempt = 0
         json_retries_left = retries
+        minute_quota_retried = 0
 
         while True:
             try:
@@ -315,8 +316,13 @@ def call_llm_json(
                 # 3. Store valid result in disk cache
                 if cache_enabled:
                     try:
+                        # If model was switched to fallback, key cache under fallback model
+                        result_cache_payload = f"{current_model}:{temperature}:{system_instruction or ''}:{prompt}"
+                        result_cache_key = hashlib.sha256(result_cache_payload.encode("utf-8")).hexdigest()
+                        result_cache_file = CACHE_DIR / f"{result_cache_key}.json"
+
                         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                        with open(cache_file, "w", encoding="utf-8") as f:
+                        with open(result_cache_file, "w", encoding="utf-8") as f:
                             json.dump(parsed, f, indent=2)
                     except Exception:
                         pass
@@ -329,22 +335,46 @@ def call_llm_json(
                 err_lower = err_text.lower()
                 retry_delay = extract_retry_delay(e)
 
-                # 1. 429 Quota exhaustion: Rotate immediately to next key, never wait
-                is_quota = (
-                    "429" in err_lower
-                    or "quota" in err_lower
-                    or "resource_exhausted" in err_lower
-                    or "perday" in err_lower
+                # 1. Daily Quota exhaustion check:
+                # Only a real daily-quota signal or retryDelay > 60s raises QuotaExhaustedError / marks key exhausted
+                is_daily_quota = (
+                    "perday" in err_lower
                     or (retry_delay is not None and retry_delay > 60)
                 )
-                if is_quota:
+
+                if is_daily_quota:
                     logging.warning(
-                        f"Quota error (429) on API key index {key_idx}. Rotating to next API key."
+                        f"Daily quota exhausted on API key index {key_idx}. Rotating to next API key."
                     )
                     mark_key_exhausted(current_key)
                     last_quota_error = e
                     switched_key_due_to_quota = True
                     break  # Break inner loop to rotate to next key in outer loop
+
+                # Per-minute rate limit / 429 check:
+                is_per_minute_quota = (
+                    "429" in err_lower
+                    or "quota" in err_lower
+                    or "resource_exhausted" in err_lower
+                )
+                if is_per_minute_quota:
+                    if minute_quota_retried < 1:
+                        minute_quota_retried += 1
+                        wait_sec = retry_delay if (retry_delay is not None and retry_delay > 0) else 5.0
+                        logging.warning(
+                            f"Per-minute rate limit (429) on API key index {key_idx}. Waiting {wait_sec}s and retrying once."
+                        )
+                        time.sleep(wait_sec)
+                        continue
+                    else:
+                        # Retried once already for this key, rotate to next key
+                        logging.warning(
+                            f"Per-minute rate limit (429) persisted on API key index {key_idx}. Rotating to next API key."
+                        )
+                        mark_key_exhausted(current_key)
+                        last_quota_error = e
+                        switched_key_due_to_quota = True
+                        break
 
                 # 2. 503 / UNAVAILABLE or 500 error: Exponential backoff with jitter, then fallback model
                 is_server_error = (

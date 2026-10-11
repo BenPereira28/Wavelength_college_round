@@ -25,6 +25,11 @@ from pydantic import BaseModel, Field
 
 from llm_client import call_llm_json
 
+# Pipeline source and batch limits
+SHORT_SOURCE_LIMIT = 1500
+FULL_SOURCE_LIMIT = 100_000
+CLAIMS_PER_JUDGE_CALL = 10
+
 
 # ==============================================================================
 # PYDANTIC DATA MODELS
@@ -196,7 +201,7 @@ def retrieve_evidence_for_claims(source: str, claims: List[ExtractedClaim]) -> d
     evidence_map = {}
 
     # For short sources, the entire source is passed directly
-    if len(source) <= 1500:
+    if len(source) <= SHORT_SOURCE_LIMIT:
         for claim in claims:
             evidence_map[claim.claim_id] = source
         return evidence_map
@@ -211,7 +216,7 @@ def retrieve_evidence_for_claims(source: str, claims: List[ExtractedClaim]) -> d
         bigrams = [f"{words[i]} {words[i+1]}" for i in range(len(words)-1)] if len(words) > 1 else []
 
         if not words:
-            evidence_map[claim.claim_id] = source[:1500]
+            evidence_map[claim.claim_id] = source[:SHORT_SOURCE_LIMIT]
             continue
 
         scored_chunks = []
@@ -304,12 +309,119 @@ Respond with a JSON array of objects with keys:
     return claims
 
 
-def step_3_judge_claims(claims: List[ExtractedClaim], evidence_map: dict[int, str]) -> List[dict]:
+def step_3_judge_claims(
+    claims: List[ExtractedClaim],
+    evidence_map: dict[int, str],
+    source_text: Optional[str] = None
+) -> List[dict]:
     """
     Stage 3: Claim Judging.
-    Evaluates each claim against its retrieved evidence text.
-    Returns raw judgments from the LLM.
+    Evaluates each claim against its source evidence text.
+    If source_text is given and SHORT_SOURCE_LIMIT < len(source_text) <= FULL_SOURCE_LIMIT,
+    sends the FULL source once per batch with up to CLAIMS_PER_JUDGE_CALL claims per LLM call.
+    Otherwise, evaluates against evidence_map (chunk evidence or short source full evidence).
+    Returns raw judgments from the LLM merged in the original claim order.
     """
+    if not claims:
+        return []
+
+    use_full_source_batches = (
+        source_text is not None
+        and SHORT_SOURCE_LIMIT < len(source_text) <= FULL_SOURCE_LIMIT
+    )
+
+    if use_full_source_batches:
+        batches = [
+            claims[i:i + CLAIMS_PER_JUDGE_CALL]
+            for i in range(0, len(claims), CLAIMS_PER_JUDGE_CALL)
+        ]
+        all_raw_items = []
+
+        for batch in batches:
+            claims_payload = [
+                {
+                    "claim_id": c.claim_id,
+                    "claim_text": c.claim_text
+                }
+                for c in batch
+            ]
+
+            prompt = f"""You are an objective auditor evaluating AI claims against provided source material.
+For each claim, carefully evaluate it against the provided source material.
+
+Evaluation criteria:
+- "verdict":
+    * "supported": The claim is directly confirmed and backed by the source material.
+    * "contradicted": The claim directly conflicts with or denies what the source material says.
+    * "insufficient_evidence": The source material does not provide enough information to verify the claim, or the claim is not mentioned.
+
+- "error_type":
+    * "none": If the verdict is "supported".
+    * "hallucinated_fact": If the claim asserts specific false facts contradicted by or fabricated beyond source facts.
+    * "unsupported_claim": If the claim is unmentioned or lacks backing in the source material.
+    * "logical_inconsistency": If the statement contradicts itself or misinterprets the source material.
+    * "unsafe_recommendation": If the statement recommends an unsafe, harmful, or unwarranted action not backed by the source material.
+
+- "evidence_quote":
+    * MUST BE A DIRECT, VERBATIM SUBSTRING QUOTE from the source material.
+    * If verdict is "insufficient_evidence" and nothing relevant exists, use an empty string "".
+
+- "explanation":
+    * One or two concise sentences explaining your decision.
+
+- "confidence":
+    * "high", "medium", or "low" based on how clear-cut the source text is.
+
+SOURCE MATERIAL:
+\"\"\"{source_text}\"\"\"
+
+CLAIMS TO EVALUATE:
+{claims_payload}
+
+Respond with a JSON array of objects with keys:
+- "claim_id": integer
+- "verdict": "supported" | "contradicted" | "insufficient_evidence"
+- "error_type": "none" | "hallucinated_fact" | "unsupported_claim" | "logical_inconsistency" | "unsafe_recommendation"
+- "evidence_quote": string (verbatim quote from source, or "")
+- "explanation": string
+- "confidence": "high" | "medium" | "low"
+"""
+
+            raw_judgments = call_llm_json(
+                prompt=prompt,
+                system_instruction="You are an uncompromising factual auditor. Never assume; verify strictly against provided text."
+            )
+
+            items = raw_judgments.get("judgments", raw_judgments) if isinstance(raw_judgments, dict) else raw_judgments
+            if isinstance(items, list):
+                all_raw_items.extend(items)
+
+        # Merge the batch results in the original claim order so claim_id stays consistent
+        judgment_by_id = {}
+        for item in all_raw_items:
+            if isinstance(item, dict) and "claim_id" in item:
+                try:
+                    judgment_by_id[int(item["claim_id"])] = item
+                except (ValueError, TypeError):
+                    pass
+
+        merged_results = []
+        for c in claims:
+            if c.claim_id in judgment_by_id:
+                merged_results.append(judgment_by_id[c.claim_id])
+            else:
+                merged_results.append({
+                    "claim_id": c.claim_id,
+                    "verdict": "insufficient_evidence",
+                    "error_type": "unsupported_claim",
+                    "evidence_quote": "",
+                    "explanation": "No judgment returned for claim.",
+                    "confidence": "low"
+                })
+
+        return merged_results
+
+    # Sources <= SHORT_SOURCE_LIMIT or > FULL_SOURCE_LIMIT (or source_text is None)
     claims_payload = []
     for c in claims:
         claims_payload.append({
@@ -615,7 +727,7 @@ def run_audit(source_text: str, ai_answer: str) -> AuditResult:
 
     # 3 & 5. Parallel execution of Step 3 (Judging) and Step 5 (Reasoning check)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        future_judgments = executor.submit(step_3_judge_claims, claims, evidence_map)
+        future_judgments = executor.submit(step_3_judge_claims, claims, evidence_map, source_text)
         future_reasoning = executor.submit(step_5_reasoning_check, source_text, ai_answer)
 
         raw_judgments = future_judgments.result()

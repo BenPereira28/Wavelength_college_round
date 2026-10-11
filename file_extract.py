@@ -326,7 +326,7 @@ def extract_docx(data: bytes) -> Dict[str, Any]:
 def extract_text(
     filename: str,
     data: bytes,
-    max_length_cap: int = 20_000,
+    max_length_cap: int = 100_000,
     max_pdf_pages: int = 100,
     insert_page_markers: bool = True
 ) -> Dict[str, Any]:
@@ -373,7 +373,7 @@ def extract_text(
     original_char_count = len(extracted_text)
     truncated = False
 
-    # Check against source length cap (20,000 chars)
+    # Check against source length cap (100,000 chars)
     if original_char_count > max_length_cap:
         truncated = True
         warnings.append(

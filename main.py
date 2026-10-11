@@ -106,6 +106,10 @@ def load_canonical_sample() -> Dict[str, Any]:
     }
 
 
+MAX_SOURCE_CHARS = 100_000
+MAX_ANSWER_CHARS = 20_000
+
+
 # ------------------------------------------------------------------------------
 # API ROUTES
 # ------------------------------------------------------------------------------
@@ -219,7 +223,7 @@ async def extract_document(file: UploadFile = File(...)):
         result = extract_text(
             filename=filename,
             data=raw_data,
-            max_length_cap=20_000,
+            max_length_cap=MAX_SOURCE_CHARS,
             max_pdf_pages=max_pdf_pages,
             insert_page_markers=True
         )
@@ -245,11 +249,11 @@ def audit_text(payload: AuditRequest):
     source_clean = payload.source.strip()
     answer_clean = payload.answer.strip()
 
-    if len(payload.source) > 20_000:
-        raise HTTPException(status_code=400, detail="Source material must be 20,000 characters or fewer.")
+    if len(payload.source) > MAX_SOURCE_CHARS:
+        raise HTTPException(status_code=400, detail=f"Source material must be {MAX_SOURCE_CHARS:,} characters or fewer.")
 
-    if len(payload.answer) > 20_000:
-        raise HTTPException(status_code=400, detail="AI answer must be 20,000 characters or fewer.")
+    if len(payload.answer) > MAX_ANSWER_CHARS:
+        raise HTTPException(status_code=400, detail=f"AI answer must be {MAX_ANSWER_CHARS:,} characters or fewer.")
 
     if not source_clean:
         raise HTTPException(status_code=400, detail="Source material cannot be empty.")

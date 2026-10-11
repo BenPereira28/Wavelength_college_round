@@ -54,9 +54,9 @@ Sends the AI answer to the LLM and extracts every atomic factual statement as a 
 
 ### 2 · Evidence Retrieval (`retrieve_evidence_for_claims`)
 
-For **short sources** (≤ 1,500 characters), the entire source text is passed as evidence for every claim. For **long sources**, the text is split into overlapping chunks (400 chars, 80-char overlap) and the top-2 chunks per claim are selected by unigram + bigram overlap scoring.
+For **short sources** (≤ 1,500 characters), the entire source text is passed directly to claim judging. For sources between 1,500 and 100,000 characters, the full source document is sent once per batch of up to 10 claims during judging, eliminating retrieval misses across long texts. For extremely long sources (> 100,000 characters), the text is split into overlapping chunks (400 chars, 80-char overlap) and the top-2 chunks per claim are selected by unigram + bigram overlap scoring.
 
-**Why it exists:** Gemini has a context window, but dumping a very long source into every prompt wastes tokens and dilutes relevance. Chunk-and-rank focuses each judgment on the most relevant evidence.
+**Why it exists:** Chunk-and-rank can miss context in medium-to-long documents, while full-source batching ensures all context is available to the judge without exceeding reasonable token limits.
 
 ### 3 · Claim Judging (`step_3_judge_claims`)
 
@@ -352,12 +352,13 @@ For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits a
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `QuotaExhaustedError` / 429 with `retryDelay` > 60 s | Daily free-tier quota used up | Wait until the quota resets (usually next day), or use a different API key |
+| `QuotaExhaustedError` / 429 daily quota | Daily free-tier quota used up across all configured API keys | Wait until the quota resets (usually next day), or add additional keys in `GEMINI_API_KEYS` |
+| 429 per-minute rate limit | Transient RPM burst rate exceeded | Automatically waits and retries once before rotating to the next key |
 | `Model not found` or 404 from Gemini | `GEMINI_MODEL` in `.env` is set to a model name that doesn't exist | Change `GEMINI_MODEL` to a valid model (e.g. `gemini-3.8-flash`) |
 | `GEMINI_API_KEY is not set` on startup | `.env` is missing or key is still the placeholder | Copy `.env.example` to `.env` and paste your real key from [AI Studio](https://aistudio.google.com/) |
 | `Address already in use` (port 8000) | Another process is using port 8000 | Stop the other process, or run `uvicorn main:app --port 8001` |
 | `ModuleNotFoundError` for `google.genai`, `pydantic`, etc. | Dependencies not installed or wrong venv | Activate your virtual environment and run `pip install -r requirements.txt` |
-| Server returns `"is_sample_data": true` on every request | No valid API key configured | Set `GEMINI_API_KEY` in `.env` to a real key |
+| Server returns HTTP 503 on `/audit` | No valid API key configured | Add your `GEMINI_API_KEY` to `.env` to execute live audits |
 
 ---
 
@@ -408,18 +409,18 @@ For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits a
 
 These limitations are derived from what the code actually does; they are not hypothetical.
 
-1. **Audits only against the provided source.** The pipeline compares the answer exclusively to the source text you supply. It cannot verify claims against the real world, the Internet, or any external knowledge base. A claim that is factually true but absent from the source will receive an `insufficient_evidence` verdict — by design.
+1. **Audits check consistency with the provided source, not real-world truth.** The pipeline compares the answer exclusively to the source text you supply. It cannot verify claims against the real world, the Internet, or any external knowledge base. If the source is wrong or incomplete, the audit can be wrong too. A claim that is factually true in reality but unmentioned in the source will receive an `insufficient_evidence` verdict — by design.
 
-2. **Confidence is not proof.** The `confidence` field (`high` / `medium` / `low`) reflects how clear-cut the LLM found the evidence, not a calibrated probability. A `"high"` confidence `"supported"` verdict can still be wrong.
+2. **Confidence is not proof.** The `confidence` field (`high` / `medium` / `low`) reflects internal model certainty on the evidence, not a calibrated mathematical probability.
 
 3. **Results vary between LLM runs.** Because the pipeline relies on a generative model (Gemini) for claim extraction and judging, re-running the same input with `--no-cache` may produce different claim splits, verdicts, or reasoning issues. The disk cache (`.llm_cache/`) makes results reproducible only as long as the cache is intact and the model + prompt haven't changed.
 
 4. **Quote verification is string matching.** Step 4 checks whether the LLM's `evidence_quote` appears verbatim in the source. Minor paraphrasing, whitespace differences, or Unicode normalization issues can cause a valid quote to fail verification, which downgrades a `"supported"` verdict to `"insufficient_evidence"`.
 
-5. **Evidence retrieval is heuristic for long sources.** For sources over 1,500 characters, the chunking and unigram/bigram scoring is a simple heuristic — not semantic search. It can miss relevant evidence in chunks that don't share surface-level vocabulary with the claim.
+5. **Evidence retrieval and batching for long sources.** Sources between 1,500 and 100,000 characters are evaluated in full-source batches of up to 10 claims. Sources over 100,000 characters fall back to heuristic chunking and unigram/bigram overlap scoring, which can miss relevant evidence that lacks surface-level keyword overlap.
 
-6. **The 20,000-character input cap.** Both `source` and `answer` are limited to 20,000 characters by `main.py`. Longer documents must be trimmed before submission.
+6. **Input limits (100,000 chars for source, 20,000 chars for answer).** The source material is capped at 100,000 characters and the answer is capped at 20,000 characters by `main.py` and `file_extract.py`.
 
-7. **Three LLM calls per audit.** Each audit makes 3 API calls (extraction, judging, reasoning). On the free tier this limits throughput and can trigger quota exhaustion after a moderate number of audits per day.
+7. **LLM throughput and free-tier quotas.** Each audit makes multiple API calls depending on source length and claim count (extraction, judging in batches of up to 10 claims, and reasoning check). On the free tier this limits throughput and can trigger quota exhaustion after a moderate number of audits per day.
 
 8. **Document layout and lack of OCR.** File extraction relies on underlying text streams and does not perform OCR. Scanned or image-only documents cannot be read. Complex multi-column layouts, forms, mathematical formulas, or stylized callouts may extract out-of-order or with irregular spacing.

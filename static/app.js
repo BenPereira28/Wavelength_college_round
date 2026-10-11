@@ -305,7 +305,7 @@ async function triggerAudit() {
             let detail = "";
             try {
                 const errData = await response.json();
-                detail = errData.detail || "";
+                detail = formatErrorDetail(errData.detail, "");
             } catch (_) {}
 
             if (response.status === 503) {
@@ -551,7 +551,7 @@ async function handleFileUpload(target, file) {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            const detail = data.detail || `Extraction failed with HTTP ${response.status}`;
+            const detail = formatErrorDetail(data.detail, `Extraction failed with HTTP ${response.status}`);
             if (response.status === 422) {
                 showInlineError(target, `Scanned PDF: ${detail}`);
             } else if (response.status === 413) {
@@ -849,11 +849,12 @@ function renderHighlightedAnswer(answerText, claims) {
             item.setAttribute("data-claim-id", c.claim_id);
             const verdictClass = safeVerdictClass(c.verdict);
             const verdictGlyph = getVerdictGlyph(c.verdict);
+            const verdictLabel = formatVerdictLabel(c.verdict);
             item.innerHTML = `
                 <span class="unlocated-id">Claim #${escapeHtml(String(c.claim_id))}</span>
                 <span class="unlocated-text">"${escapeHtml(c.claim_text)}"</span>
                 <span class="pill pill-verdict verdict-${verdictClass}">
-                    ${verdictGlyph} ${escapeHtml(String(c.verdict || "unknown").replace(/_/g, " "))}
+                    ${verdictGlyph} ${escapeHtml(verdictLabel)}
                 </span>
             `;
             item.onclick = () => selectClaim(c.claim_id, true);
@@ -961,7 +962,8 @@ function selectClaim(claimId, shouldScroll = true) {
     // Verdict Pill
     const vPill = document.getElementById("inspectorVerdict");
     const vGlyph = getVerdictGlyph(claim.verdict);
-    vPill.textContent = `${vGlyph} ${String(claim.verdict || "unknown").replace(/_/g, " ")}`;
+    const vLabel = formatVerdictLabel(claim.verdict);
+    vPill.textContent = `${vGlyph} ${vLabel}`;
     vPill.className = `pill pill-verdict verdict-${safeVerdictClass(claim.verdict)}`;
 
     // Error Type Pill
@@ -1330,4 +1332,37 @@ function safeVerdictClass(verdict) {
 function safeSeverityClass(severity) {
     const allowed = ["high", "medium", "low"];
     return allowed.includes(severity) ? severity : "low";
+}
+
+function formatVerdictLabel(verdict) {
+    if (verdict === "supported") return "Consistent with source";
+    return String(verdict || "unknown").replace(/_/g, " ");
+}
+
+function formatErrorDetail(detail, fallback = "") {
+    if (!detail) return fallback;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+        // FastAPI 422 validation errors: array of { loc, msg, type }
+        const messages = detail.map(item => {
+            if (typeof item === "string") return item;
+            if (item && typeof item === "object") {
+                const loc = Array.isArray(item.loc) ? item.loc.filter(l => l !== "body").join(".") : "";
+                const msg = item.msg || JSON.stringify(item);
+                return loc ? `${loc}: ${msg}` : msg;
+            }
+            return String(item);
+        });
+        return messages.filter(Boolean).join("; ") || fallback;
+    }
+    if (typeof detail === "object") {
+        if (detail.message) return String(detail.message);
+        if (detail.msg) return String(detail.msg);
+        try {
+            return JSON.stringify(detail);
+        } catch (_) {
+            return fallback;
+        }
+    }
+    return String(detail);
 }
