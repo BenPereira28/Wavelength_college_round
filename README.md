@@ -109,7 +109,7 @@ The score is clamped to `[0, 100]`. The full breakdown is returned in `score_bre
 
 ```
 .
-├── main.py                  # FastAPI server (routes, CORS, offline fallback)
+├── main.py                  # FastAPI server (routes, CORS; /audit returns HTTP 503 when no valid Gemini key is configured)
 ├── pipeline.py              # 6-stage audit pipeline (run_audit entry point)
 ├── llm_client.py            # Gemini SDK wrapper, disk cache, QuotaExhaustedError
 ├── requirements.txt         # Pinned Python dependencies
@@ -118,8 +118,12 @@ The score is clamped to `[0, 100]`. The full breakdown is returned in `score_bre
 ├── sample_response.json     # Canonical sample audit result (Eiffel Tower example)
 ├── test_setup.py            # Step-1 diagnostic: checks packages and .env
 ├── test_api.py              # Endpoint tests (mocked by default, --live for real API)
+├── scripts/                 # Standalone helper and verification scripts (e.g. verify_browser.py)
 ├── tests/
 │   ├── __init__.py
+│   ├── test_extract.py      # Tests for document extraction (.pdf, .docx, .txt)
+│   ├── test_key_rotation.py # Tests for multi-key rotation and resilient error handling
+│   ├── test_long_source.py  # Tests for long source support and batch judging
 │   └── test_server.py       # Comprehensive unittest suite for API endpoints
 ├── static/
 │   ├── index.html           # Single-page frontend for Second Opinion
@@ -187,7 +191,7 @@ python test_setup.py
 python main.py
 ```
 
-> **No API key?** The server still works — it returns the canonical sample audit from `sample_response.json` and labels the response `"is_sample_data": true`.
+> **No API key?** The server can still serve the canonical sample audit via `GET /api/sample-audit` (`"is_sample_data": true`). Live `/audit` calls require a configured Gemini key and return HTTP 503 if no key is present.
 
 ---
 
@@ -342,7 +346,7 @@ When a daily quota limit is hit, `llm_client.py` raises `QuotaExhaustedError` im
 - Error text contains `PerDay` or `RESOURCE_EXHAUSTED`
 - Or the server-reported `retryDelay` exceeds 60 seconds
 
-The `/audit` endpoint catches `QuotaExhaustedError` and falls back to the canonical sample response with a notice appended to `assessment_text`. The eval harness stops cleanly, prints how many cases finished, and reminds you that finished cases are cached.
+The `/audit` endpoint catches `QuotaExhaustedError` and returns HTTP 429 with a clear error message. The eval harness stops cleanly, prints how many cases finished, and reminds you that finished cases are cached.
 
 For short per-minute 429 errors (`retryDelay` ≤ 60 s), `call_llm_json` waits and retries once. For 503 / unavailable errors, it retries with exponential backoff and falls over to the fallback model configured via `GEMINI_FALLBACK_MODEL` (default: `gemini-3.7-flash`).
 

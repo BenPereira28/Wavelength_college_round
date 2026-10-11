@@ -353,3 +353,59 @@ def test_run_eval_continues_on_single_case_error(tmp_path):
     assert "case_ok2" in md
 
 
+def test_fallback_model_caches_under_fallback_model_key(tmp_path):
+    """
+    Mock the Gemini client so the primary model keeps failing with a 503 and
+    the fallback model succeeds. Use a temp cache dir and make sure cache is turned on.
+    Assert the result is stored under the FALLBACK model's cache key and that no
+    cache file exists under the PRIMARY model's key for the same prompt.
+    """
+    import hashlib
+
+    temp_cache = tmp_path / ".test_cache"
+    temp_cache.mkdir(parents=True, exist_ok=True)
+    prompt_text = "Prompt to verify fallback caching"
+    primary_model = "gemini-3.8-flash"
+    fallback_model = "gemini-3.7-flash"
+
+    mock_resp = MagicMock()
+    mock_resp.text = '{"cached_by": "fallback"}'
+
+    mock_client = MagicMock()
+    # Primary fails with 503 until retries exhausted, then fallback model succeeds
+    mock_client.models.generate_content.side_effect = [
+        Exception("503 Service Unavailable"),
+        Exception("503 Service Unavailable"),
+        Exception("503 Service Unavailable"),
+        Exception("503 Service Unavailable"),
+        Exception("503 Service Unavailable"),
+        mock_resp,
+    ]
+
+    with patch.dict(os.environ, {
+        "GEMINI_API_KEY": "test_cache_key_fb",
+        "GEMINI_MODEL": primary_model,
+        "GEMINI_FALLBACK_MODEL": fallback_model,
+        "LLM_CACHE": "on"
+    }, clear=True), \
+         patch("llm_client.CACHE_DIR", temp_cache), \
+         patch("llm_client.get_client", return_value=mock_client), \
+         patch("time.sleep"):
+        res = call_llm_json(prompt=prompt_text)
+        assert res == {"cached_by": "fallback"}
+
+        # Expected fallback cache file
+        fallback_payload = f"{fallback_model}:0.1::{prompt_text}"
+        fallback_key = hashlib.sha256(fallback_payload.encode("utf-8")).hexdigest()
+        fallback_file = temp_cache / f"{fallback_key}.json"
+
+        # Primary model cache file
+        primary_payload = f"{primary_model}:0.1::{prompt_text}"
+        primary_key = hashlib.sha256(primary_payload.encode("utf-8")).hexdigest()
+        primary_file = temp_cache / f"{primary_key}.json"
+
+        assert fallback_file.exists(), "Cache file must exist under the fallback model's key"
+        assert not primary_file.exists(), "No cache file must exist under the primary model's key"
+
+
+
